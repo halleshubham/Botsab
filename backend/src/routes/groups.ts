@@ -80,14 +80,24 @@ router.post("/:groupId/send", async (req: Request, res: Response) => {
     case "video":    content = { video: { url: body.url }, caption: body.caption }; break;
   }
 
-  try {
-    const result = await meta.socket.sendMessage(jid, content as Parameters<typeof meta.socket.sendMessage>[1]);
-    const ts = result?.messageTimestamp;
-    const timestamp = !ts ? null : typeof ts === "number" ? ts : Number(ts.toString());
-    res.json({ messageId: result?.key?.id, groupId: jid, status: "sent", timestamp });
-  } catch (err: unknown) {
-    res.status(400).json({ error: err instanceof Error ? err.message : "Send failed" });
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const result = await meta.socket.sendMessage(jid, content as Parameters<typeof meta.socket.sendMessage>[1]);
+      const ts = result?.messageTimestamp;
+      const timestamp = !ts ? null : typeof ts === "number" ? ts : Number(ts.toString());
+      return res.json({ messageId: result?.key?.id, groupId: jid, status: "sent", timestamp });
+    } catch (err: unknown) {
+      lastErr = err;
+      const msg = err instanceof Error ? err.message : "";
+      if (msg === "No sessions" && attempt < 3) {
+        await new Promise((r) => setTimeout(r, 3000 * attempt));
+        continue;
+      }
+      break;
+    }
   }
+  res.status(400).json({ error: lastErr instanceof Error ? lastErr.message : "Send failed" });
 });
 
 router.post("/:groupId/participants", async (req: Request, res: Response) => {

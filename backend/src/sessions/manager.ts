@@ -42,6 +42,10 @@ class SessionManager {
     const { state, saveCreds } = await useMultiFileAuthState(sessionsDir);
     const { version } = await fetchLatestBaileysVersion();
 
+    // Holds the socket reference so cachedGroupMetadata (inside makeWASocket
+    // options) can call socket.groupMetadata after the socket is created.
+    const socketRef: { current: WASocket | null } = { current: null };
+
     const socket = makeWASocket({
       version,
       auth: {
@@ -53,7 +57,26 @@ class SessionManager {
       browser: ["Botsab", "Chrome", "1.0.0"],
       syncFullHistory: false,
       generateHighQualityLinkPreview: true,
+      // Required for Baileys to handle group encryption retries
+      getMessage: async () => ({ conversation: "" }),
+      // Filter out @lid participants before Baileys calls assertSessions() on them.
+      // Groups where every member uses the LID format cause "not-acceptable" because
+      // Baileys re-encodes them as @s.whatsapp.net when distributing sender keys.
+      // With an empty participantsList, senderKeyJids stays empty and assertSessions
+      // is never reached; WhatsApp handles key resync via per-device retry receipts.
+      cachedGroupMetadata: async (jid) => {
+        if (!socketRef.current) return undefined;
+        try {
+          const gMeta = await socketRef.current.groupMetadata(jid);
+          const filtered = gMeta.participants.filter((p) => !p.id.endsWith("@lid"));
+          return { ...gMeta, participants: filtered };
+        } catch {
+          return undefined;
+        }
+      },
     });
+
+    socketRef.current = socket;
 
     const meta: SessionMeta = {
       socket,
