@@ -1,7 +1,5 @@
 node_modules
 dist
-sessions
-!src/sessions
 *.log
 .env
 .env.*
