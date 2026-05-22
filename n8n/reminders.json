@@ -1,0 +1,111 @@
+{
+  "name": "Botsab - Anniversary Reminders",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000001",
+      "name": "Daily 9 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "REPLACE_WITH_YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "options": {
+          "headerRow": 1
+        }
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000002",
+      "name": "Read Anniversary Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.4,
+      "position": [460, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "REPLACE_WITH_YOUR_GOOGLE_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      },
+      "notes": "Sheet columns: Name | Date (MM-DD) | Type | InstanceID | GroupID | CustomMessage"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Expected sheet columns:\n// Name        – person's name, e.g. \"John Doe\"\n// Date        – MM-DD, e.g. \"06-15\"  (recurring yearly)\n// Type        – \"Birth Anniversary\" | \"Death Anniversary\" | \"Other\"\n// InstanceID  – Botsab instance ID\n// GroupID     – WhatsApp group JID, e.g. \"120363XXXXXXX@g.us\"\n// CustomMessage – (optional) override message text\n\nconst REMINDER_DAYS = [35, 14, 7, 3, 1, 0]; // days before (0 = on the day)\n\nconst today = new Date();\ntoday.setHours(0, 0, 0, 0);\n\nconst results = [];\n\nfor (const item of $input.all()) {\n  const { Name, Date: dateStr, Type, InstanceID, GroupID, CustomMessage } = item.json;\n  if (!dateStr || !GroupID || !InstanceID || !Name) continue;\n\n  const parts = String(dateStr).split('-');\n  if (parts.length < 2) continue;\n  const month = parseInt(parts[0], 10) - 1; // 0-indexed\n  const day   = parseInt(parts[1], 10);\n\n  const thisYear = today.getFullYear();\n  let anniversary = new Date(thisYear, month, day);\n  anniversary.setHours(0, 0, 0, 0);\n\n  // If already passed this year, use next year\n  if (anniversary < today) {\n    anniversary = new Date(thisYear + 1, month, day);\n  }\n\n  const daysUntil = Math.round((anniversary.getTime() - today.getTime()) / 86_400_000);\n\n  if (!REMINDER_DAYS.includes(daysUntil)) continue;\n\n  const typeLabel = String(Type || 'Anniversary');\n  let message;\n  if (CustomMessage) {\n    // Support {{name}}, {{type}}, {{days}} placeholders in custom message\n    message = String(CustomMessage)\n      .replace('{{name}}', Name)\n      .replace('{{type}}', typeLabel)\n      .replace('{{days}}', String(daysUntil));\n  } else if (daysUntil === 0) {\n    message = `🎉 Today is ${Name}'s ${typeLabel}! Wishing them all the best.`;\n  } else if (daysUntil === 1) {\n    message = `🔔 Reminder: Tomorrow is ${Name}'s ${typeLabel}!`;\n  } else {\n    message = `🔔 Reminder: ${Name}'s ${typeLabel} is in ${daysUntil} days (${anniversary.toLocaleDateString('en-IN', { day: 'numeric', month: 'long' })}).`;\n  }\n\n  results.push({\n    json: {\n      instanceId: String(InstanceID),\n      groupId: String(GroupID),\n      message,\n      name: String(Name),\n      type: typeLabel,\n      daysUntil,\n      anniversaryDate: anniversary.toISOString().split('T')[0],\n    }\n  });\n}\n\nreturn results;"
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000003",
+      "name": "Filter Upcoming Dates",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://localhost:3000/instances/{{ $json.instanceId }}/groups/{{ $json.groupId }}/send",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "type", "value": "text" },
+            { "name": "text", "value": "={{ $json.message }}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-0001-0001-000000000004",
+      "name": "Send Group Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_YOUR_HTTP_HEADER_CREDENTIAL_ID",
+          "name": "Botsab API Key"
+        }
+      },
+      "notes": "Create an HTTP Header Auth credential: Name=x-api-key, Value=<your Botsab API key>"
+    }
+  ],
+  "connections": {
+    "Daily 9 AM": {
+      "main": [
+        [{ "node": "Read Anniversary Sheet", "type": "main", "index": 0 }]
+      ]
+    },
+    "Read Anniversary Sheet": {
+      "main": [
+        [{ "node": "Filter Upcoming Dates", "type": "main", "index": 0 }]
+      ]
+    },
+    "Filter Upcoming Dates": {
+      "main": [
+        [{ "node": "Send Group Message", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "meta": { "templateCredsSetupCompleted": false }
+}

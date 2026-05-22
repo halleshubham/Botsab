@@ -1,0 +1,39 @@
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { AppLayout } from "@/components/layout/AppLayout";
+import { Login } from "@/pages/Login";
+import { Register } from "@/pages/Register";
+import { Dashboard } from "@/pages/Dashboard";
+import { Instances } from "@/pages/Instances";
+import { ApiKeys } from "@/pages/ApiKeys";
+import { Webhooks } from "@/pages/Webhooks";
+import { ApiDocs } from "@/pages/ApiDocs";
+import { Groups } from "@/pages/Groups";
+import { Admin } from "@/pages/Admin";
+import { Toaster } from "@/components/ui/toaster";
+
+const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 10_000 } } });
+
+export default function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Register />} />
+          <Route element={<AppLayout />}>
+            <Route index element={<Dashboard />} />
+            <Route path="/instances" element={<Instances />} />
+            <Route path="/keys" element={<ApiKeys />} />
+            <Route path="/webhooks" element={<Webhooks />} />
+            <Route path="/groups" element={<Groups />} />
+            <Route path="/admin" element={<Admin />} />
+            <Route path="/docs" element={<ApiDocs />} />
+          </Route>
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
+      <Toaster />
+    </QueryClientProvider>
+  );
+}

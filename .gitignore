@@ -1,0 +1,19 @@
+# Dependencies
+node_modules
+
+# Build outputs
+dist
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Botsab runtime
+backend/sessions
+backend/dist
+
+# Editor / tooling
+.DS_Store
+*.log
+.claude
