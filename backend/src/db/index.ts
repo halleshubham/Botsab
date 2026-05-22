@@ -10,5 +10,6 @@ export const db = Knex({
   migrations: {
     directory: path.join(__dirname, "migrations"),
     extension: process.env.NODE_ENV === "production" ? "js" : "ts",
+    loadExtensions: process.env.NODE_ENV === "production" ? [".js"] : [".ts"],
   },
 });
