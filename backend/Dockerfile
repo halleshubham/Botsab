@@ -3,7 +3,7 @@ FROM node:20-alpine AS builder
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci
+RUN npm ci --legacy-peer-deps
 
 COPY tsconfig.json ./
 COPY src ./src
@@ -17,7 +17,7 @@ ENV NODE_ENV=production
 
 # Install production deps only (sharp needs native build so must run here)
 COPY package*.json ./
-RUN npm ci --omit=dev
+RUN npm ci --omit=dev --legacy-peer-deps
 
 # Copy compiled output
 COPY --from=builder /app/dist ./dist
