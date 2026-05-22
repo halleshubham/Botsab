@@ -1,5 +1,6 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
+import type { GroupMetadata } from "@whiskeysockets/baileys";
 import { requireApiKey, requireInstanceOwner } from "../auth/middleware";
 import { sessionManager } from "../sessions/manager";
 
@@ -22,7 +23,7 @@ router.get("/", async (req: Request, res: Response) => {
   if (!meta) return;
   const groups = await meta.socket.groupFetchAllParticipating();
   res.json(
-    Object.values(groups).map((g) => ({
+    (Object.values(groups) as GroupMetadata[]).map((g) => ({
       id: g.id,
       name: g.subject,
       description: g.desc ?? null,
