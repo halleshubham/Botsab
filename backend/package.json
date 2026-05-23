@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@hapi/boom": "^10.0.1",
-    "@whiskeysockets/baileys": "^6.7.16",
+    "@whiskeysockets/baileys": "^6.7.23",
     "axios": "^1.6.7",
     "bcrypt": "^5.1.1",
     "dotenv": "^16.4.1",
