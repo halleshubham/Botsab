@@ -1,54 +1,19 @@
 {
-  "name": "Botsab - Group Assistant Bot",
+  "name": "Botsab - Group Assistant Bot (Full)",
   "nodes": [
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "botsab-bot",
+        "path": "botsab-assistant",
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "b2c3d4e5-0002-0002-0002-000000000001",
-      "name": "Receive Botsab Webhook",
+      "id": "aa000001",
+      "name": "Receive Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [240, 300],
-      "webhookId": "botsab-group-bot",
-      "notes": "Set this URL as the webhook URL in Botsab for your instance. Subscribe to: message.received"
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "strict" },
-          "conditions": [
-            {
-              "id": "cond-is-group",
-              "leftValue": "={{ $json.body.data.enriched.isGroup }}",
-              "rightValue": true,
-              "operator": { "type": "boolean", "operation": "equals" }
-            },
-            {
-              "id": "cond-is-mentioned",
-              "leftValue": "={{ $json.body.data.enriched.isMentioned }}",
-              "rightValue": true,
-              "operator": { "type": "boolean", "operation": "equals" }
-            },
-            {
-              "id": "cond-has-text",
-              "leftValue": "={{ $json.body.event }}",
-              "rightValue": "message.received",
-              "operator": { "type": "string", "operation": "equals" }
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "id": "b2c3d4e5-0002-0002-0002-000000000002",
-      "name": "Is Group Mention?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [460, 300]
+      "notes": "Register this URL in Botsab: PUT /instances/:id/webhooks  {\"url\":\"http://n8n:5678/webhook/botsab-assistant\",\"events\":[\"message.received\"]}"
     },
     {
       "parameters": {
@@ -56,49 +21,110 @@
         "responseBody": "ok",
         "options": {}
       },
-      "id": "b2c3d4e5-0002-0002-0002-000000000003",
-      "name": "Ignore (ack webhook)",
+      "id": "aa000002",
+      "name": "Ack Webhook",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [460, 480]
+      "position": [460, 480],
+      "notes": "Closes the HTTP connection immediately so Botsab's dispatcher doesn't time out. Processing continues in the background."
     },
     {
       "parameters": {
-        "jsCode": "const enriched = $json.body.data.enriched;\nconst instanceId = $json.body.instanceId;\n\n// Strip @mentions from query text\nlet query = (enriched.text || '').replace(/@\\d+\\s*/g, '').trim();\n\nif (!query) {\n  // No real question — send a helpful nudge\n  return [{ json: {\n    instanceId,\n    groupId: enriched.groupId,\n    senderId: enriched.senderId,\n    query: null,\n    reply: 'Hi! I am the group assistant. Tag me with a question and I will do my best to help. 🤖',\n  }}];\n}\n\nreturn [{ json: {\n  instanceId,\n  groupId: enriched.groupId,\n  senderId: enriched.senderId,\n  query,\n  reply: null,\n}}];"
+        "jsCode": "// ── Parse incoming Botsab webhook ──────────────────────────────────────────\nconst body  = $json.body || {};\nconst event = body.event;\nconst instanceId = body.instanceId || '';\nconst enriched   = body.data?.enriched || {};\n\n// Only handle message.received that are group mentions with text\nif (event !== 'message.received')           return [{ json: { skip: true, reason: 'wrong event' } }];\nif (!enriched.isGroup)                      return [{ json: { skip: true, reason: 'not group' } }];\nif (!enriched.isMentioned)                  return [{ json: { skip: true, reason: 'not mentioned' } }];\nconst rawText = (enriched.text || '').trim();\nif (!rawText)                               return [{ json: { skip: true, reason: 'empty text' } }];\n\n// ── Rate limit: 1 message per group per 3 s ────────────────────────────────\nif (!globalThis._botsabRL) globalThis._botsabRL = {};\nconst now = Date.now();\nconst groupId = enriched.groupId || enriched.remoteJid || '';\nif (now - (globalThis._botsabRL[groupId] || 0) < 3000) {\n  return [{ json: { skip: true, reason: 'rate limited' } }];\n}\nglobalThis._botsabRL[groupId] = now;\n\n// ── Strip @mentions from query ─────────────────────────────────────────────\nconst query = rawText.replace(/@\\d+[\\s]*/g, '').trim();\n\n// ── Detect slash commands (/help, /reset, /about) ─────────────────────────\nconst cmdMatch    = query.match(/^\\/([\\w]+)(?:\\s+(.*))?$/);\nconst isCommand   = !!cmdMatch;\nconst commandName = cmdMatch ? cmdMatch[1].toLowerCase() : null;\nconst commandArg  = cmdMatch ? (cmdMatch[2] || '').trim() : null;\n\nreturn [{ json: {\n  skip: false,\n  instanceId,\n  groupId,\n  senderId:    enriched.senderId || '',\n  rawText,\n  query:       query || rawText,\n  isCommand,\n  commandName,\n  commandArg,\n} }];"
       },
-      "id": "b2c3d4e5-0002-0002-0002-000000000004",
-      "name": "Extract Query",
+      "id": "aa000003",
+      "name": "Parse & Filter",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [680, 300]
+      "position": [460, 300]
     },
     {
       "parameters": {
         "conditions": {
-          "options": { "caseSensitive": false },
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
           "conditions": [
             {
-              "id": "cond-has-query",
-              "leftValue": "={{ $json.query }}",
-              "rightValue": "",
-              "operator": { "type": "string", "operation": "notEquals" }
-            },
-            {
-              "id": "cond-not-null",
-              "leftValue": "={{ $json.query }}",
-              "rightValue": "",
-              "operator": { "type": "string", "operation": "isNotEmpty" }
+              "id": "c1",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": false,
+              "operator": { "type": "boolean", "operation": "equals" }
             }
           ],
           "combinator": "and"
         },
         "options": {}
       },
-      "id": "b2c3d4e5-0002-0002-0002-000000000005",
-      "name": "Has Real Query?",
+      "id": "aa000004",
+      "name": "Should Process?",
       "type": "n8n-nodes-base.if",
       "typeVersion": 2,
-      "position": [900, 300]
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "c2",
+              "leftValue": "={{ $json.isCommand }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "aa000005",
+      "name": "Is Command?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Handle slash commands ─────────────────────────────────────────────────\nconst { instanceId, groupId, commandName } = $json;\n\nif (!globalThis._botsabHistory) globalThis._botsabHistory = {};\nconst key = `${instanceId}:${groupId}`;\n\nlet reply;\nswitch (commandName) {\n  case 'help':\n    reply =\n      '🤖 AI Assistant — Commands\\n' +\n      '• /help   — show this list\\n' +\n      '• /reset  — clear conversation history\\n' +\n      '• /about  — about this bot\\n\\n' +\n      'Or just tag me with any question!';\n    break;\n\n  case 'reset':\n    delete globalThis._botsabHistory[key];\n    reply = '✅ Conversation history cleared. Fresh start!';\n    break;\n\n  case 'about':\n    reply =\n      '🤖 Powered by Claude AI (Anthropic), integrated via Botsab.\\n' +\n      'I remember the last 10 messages in this group. Tag me anytime!';\n    break;\n\n  default:\n    reply = `❓ Unknown command: /${commandName}\\nType /help to see available commands.`;\n}\n\nreturn [{ json: { instanceId, groupId, reply } }];"
+      },
+      "id": "aa000006",
+      "name": "Handle Command",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 140]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://localhost:3000/instances/{{ $json.instanceId }}/groups/{{ $json.groupId }}/send",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "REPLACE_WITH_YOUR_BOTSAB_API_KEY" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={\"type\":\"text\",\"text\":{{ JSON.stringify($json.reply) }}}",
+        "options": {}
+      },
+      "id": "aa000007",
+      "name": "Send Command Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 140]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Build Claude API request with conversation history ─────────────────────\nconst { instanceId, groupId, senderId, query } = $json;\n\n// ── System prompt — customise this ────────────────────────────────────────\nconst today = new Date().toLocaleDateString('en-IN', {\n  weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',\n});\nconst SYSTEM = `You are a helpful AI assistant embedded in a WhatsApp group via Botsab.\n\nGuidelines:\n- Be concise: reply in under 200 words unless the question genuinely needs more.\n- Plain text only — NO markdown bold (**), NO italic (_), NO headers (##), NO triple backticks.\n- Use bullet points with • if listing things.\n- Friendly, warm tone.\n- If you do not know something, say so honestly.\n- Do not repeat the question back.\n- Today is ${today}.`;\n\n// ── Load per-group history ─────────────────────────────────────────────────\nif (!globalThis._botsabHistory) globalThis._botsabHistory = {};\nconst key = `${instanceId}:${groupId}`;\nif (!globalThis._botsabHistory[key]) globalThis._botsabHistory[key] = [];\n\nconst history  = globalThis._botsabHistory[key];\nconst messages = [ ...history.slice(-20), { role: 'user', content: query } ];\n\n// ── Build the full Anthropic request body ──────────────────────────────────\nconst claudeBody = JSON.stringify({\n  model:      'claude-haiku-4-5-20251001',\n  max_tokens: 600,\n  system:     SYSTEM,\n  messages,\n});\n\nreturn [{ json: { instanceId, groupId, senderId, query, claudeBody } }];"
+      },
+      "id": "aa000008",
+      "name": "Build AI Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 360],
+      "notes": "Change model to 'claude-sonnet-4-6' for higher quality. Edit SYSTEM prompt to match your group's purpose."
     },
     {
       "parameters": {
@@ -107,141 +133,123 @@
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "x-api-key", "value": "REPLACE_WITH_YOUR_ANTHROPIC_API_KEY" },
+            { "name": "x-api-key", "value": "REPLACE_WITH_YOUR_ANTHROPIC_KEY" },
             { "name": "anthropic-version", "value": "2023-06-01" },
             { "name": "content-type", "value": "application/json" }
           ]
         },
         "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={\n  \"model\": \"claude-haiku-4-5-20251001\",\n  \"max_tokens\": 1024,\n  \"system\": \"You are a helpful WhatsApp group assistant. Keep responses concise (under 300 words). Be friendly and helpful. No markdown formatting — plain text only.\",\n  \"messages\": [\n    { \"role\": \"user\", \"content\": {{ JSON.stringify($json.query) }} }\n  ]\n}",
-        "options": {}
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.claudeBody }}",
+        "options": {
+          "response": {
+            "response": { "responseFormat": "json" }
+          }
+        },
+        "onError": "continueErrorOutput"
       },
-      "id": "b2c3d4e5-0002-0002-0002-000000000006",
+      "id": "aa000009",
       "name": "Call Claude AI",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1120, 240],
-      "notes": "Replace REPLACE_WITH_YOUR_ANTHROPIC_API_KEY with your key. Or swap this node for OpenAI."
+      "position": [1340, 360],
+      "notes": "On error: falls through to error output (index 1) → Error Fallback node."
     },
     {
       "parameters": {
-        "jsCode": "// Claude response → clean reply text\nconst aiResponse = $('Call Claude AI').item.json;\nconst replyText = aiResponse.content?.[0]?.text ?? 'Sorry, I could not process that request.';\n\nconst query = $('Extract Query').item.json;\n\nreturn [{ json: {\n  instanceId: query.instanceId,\n  groupId: query.groupId,\n  reply: replyText,\n}}];"
+        "jsCode": "// ── Error fallback when Claude API is unreachable ─────────────────────────\nconst ctx = $('Build AI Request').item.json;\nreturn [{ json: {\n  instanceId: ctx.instanceId,\n  groupId:    ctx.groupId,\n  reply:      '⚠️ Sorry, I could not reach the AI service right now. Please try again in a moment.',\n} }];"
       },
-      "id": "b2c3d4e5-0002-0002-0002-000000000007",
-      "name": "Format AI Reply",
+      "id": "aa000010",
+      "name": "Claude Error Fallback",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1340, 240]
+      "position": [1560, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Extract reply text + persist to history ───────────────────────────────\nconst aiResp   = $json;\nconst replyText = aiResp.content?.[0]?.text?.trim()\n  ?? 'Sorry, I could not generate a response. Please try again.';\n\nconst ctx = $('Build AI Request').item.json;\nconst { instanceId, groupId, query } = ctx;\n\n// Persist exchange\nif (!globalThis._botsabHistory) globalThis._botsabHistory = {};\nconst key = `${instanceId}:${groupId}`;\nif (!globalThis._botsabHistory[key]) globalThis._botsabHistory[key] = [];\n\nglobalThis._botsabHistory[key].push(\n  { role: 'user',      content: query     },\n  { role: 'assistant', content: replyText },\n);\n\n// Keep last 20 messages (10 exchanges)\nif (globalThis._botsabHistory[key].length > 20) {\n  globalThis._botsabHistory[key] = globalThis._botsabHistory[key].slice(-20);\n}\n\nreturn [{ json: { instanceId, groupId, reply: replyText } }];"
+      },
+      "id": "aa000011",
+      "name": "Save & Format Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 360]
     },
     {
       "parameters": {
         "method": "POST",
         "url": "=http://localhost:3000/instances/{{ $json.instanceId }}/groups/{{ $json.groupId }}/send",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
-        "sendBody": true,
-        "bodyParameters": {
+        "sendHeaders": true,
+        "headerParameters": {
           "parameters": [
-            { "name": "type", "value": "text" },
-            { "name": "text", "value": "={{ $json.reply }}" }
+            { "name": "x-api-key", "value": "REPLACE_WITH_YOUR_BOTSAB_API_KEY" },
+            { "name": "content-type", "value": "application/json" }
           ]
         },
-        "options": {}
-      },
-      "id": "b2c3d4e5-0002-0002-0002-000000000008",
-      "name": "Reply to Group",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [1560, 300],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "REPLACE_WITH_YOUR_HTTP_HEADER_CREDENTIAL_ID",
-          "name": "Botsab API Key"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "=http://localhost:3000/instances/{{ $json.instanceId }}/groups/{{ $json.groupId }}/send",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            { "name": "type", "value": "text" },
-            { "name": "text", "value": "={{ $json.reply }}" }
-          ]
-        },
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={\"type\":\"text\",\"text\":{{ JSON.stringify($json.reply) }}}",
         "options": {}
       },
-      "id": "b2c3d4e5-0002-0002-0002-000000000009",
-      "name": "Reply (no query nudge)",
+      "id": "aa000012",
+      "name": "Send AI Reply",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [1120, 380],
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "REPLACE_WITH_YOUR_HTTP_HEADER_CREDENTIAL_ID",
-          "name": "Botsab API Key"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "respondWith": "text",
-        "responseBody": "ok",
-        "options": {}
-      },
-      "id": "b2c3d4e5-0002-0002-0002-000000000010",
-      "name": "Ack webhook",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.1,
-      "position": [1780, 300]
+      "position": [1780, 400]
     }
   ],
   "connections": {
-    "Receive Botsab Webhook": {
+    "Receive Webhook": {
       "main": [
-        [{ "node": "Is Group Mention?", "type": "main", "index": 0 }]
+        [
+          { "node": "Ack Webhook",    "type": "main", "index": 0 },
+          { "node": "Parse & Filter", "type": "main", "index": 0 }
+        ]
       ]
     },
-    "Is Group Mention?": {
+    "Parse & Filter": {
       "main": [
-        [{ "node": "Extract Query", "type": "main", "index": 0 }],
-        [{ "node": "Ignore (ack webhook)", "type": "main", "index": 0 }]
+        [{ "node": "Should Process?", "type": "main", "index": 0 }]
       ]
     },
-    "Extract Query": {
+    "Should Process?": {
       "main": [
-        [{ "node": "Has Real Query?", "type": "main", "index": 0 }]
+        [{ "node": "Is Command?",     "type": "main", "index": 0 }],
+        []
       ]
     },
-    "Has Real Query?": {
+    "Is Command?": {
       "main": [
-        [{ "node": "Call Claude AI", "type": "main", "index": 0 }],
-        [{ "node": "Reply (no query nudge)", "type": "main", "index": 0 }]
+        [{ "node": "Handle Command",   "type": "main", "index": 0 }],
+        [{ "node": "Build AI Request", "type": "main", "index": 0 }]
+      ]
+    },
+    "Handle Command": {
+      "main": [
+        [{ "node": "Send Command Reply", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build AI Request": {
+      "main": [
+        [{ "node": "Call Claude AI", "type": "main", "index": 0 }]
       ]
     },
     "Call Claude AI": {
       "main": [
-        [{ "node": "Format AI Reply", "type": "main", "index": 0 }]
+        [{ "node": "Save & Format Reply",  "type": "main", "index": 0 }],
+        [{ "node": "Claude Error Fallback", "type": "main", "index": 0 }]
       ]
     },
-    "Format AI Reply": {
+    "Save & Format Reply": {
       "main": [
-        [{ "node": "Reply to Group", "type": "main", "index": 0 }]
+        [{ "node": "Send AI Reply", "type": "main", "index": 0 }]
       ]
     },
-    "Reply to Group": {
+    "Claude Error Fallback": {
       "main": [
-        [{ "node": "Ack webhook", "type": "main", "index": 0 }]
-      ]
-    },
-    "Reply (no query nudge)": {
-      "main": [
-        [{ "node": "Ack webhook", "type": "main", "index": 0 }]
+        [{ "node": "Send AI Reply", "type": "main", "index": 0 }]
       ]
     }
   },
