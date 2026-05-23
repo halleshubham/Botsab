@@ -84,7 +84,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// ── Handle slash commands ─────────────────────────────────────────────────\nconst { instanceId, groupId, commandName } = $json;\n\nif (!globalThis._botsabHistory) globalThis._botsabHistory = {};\nconst key = `${instanceId}:${groupId}`;\n\nlet reply;\nswitch (commandName) {\n  case 'help':\n    reply =\n      '🤖 AI Assistant — Commands\\n' +\n      '• /help   — show this list\\n' +\n      '• /reset  — clear conversation history\\n' +\n      '• /about  — about this bot\\n\\n' +\n      'Or just tag me with any question!';\n    break;\n\n  case 'reset':\n    delete globalThis._botsabHistory[key];\n    reply = '✅ Conversation history cleared. Fresh start!';\n    break;\n\n  case 'about':\n    reply =\n      '🤖 Powered by Claude AI (Anthropic), integrated via Botsab.\\n' +\n      'I remember the last 10 messages in this group. Tag me anytime!';\n    break;\n\n  default:\n    reply = `❓ Unknown command: /${commandName}\\nType /help to see available commands.`;\n}\n\nreturn [{ json: { instanceId, groupId, reply } }];"
+        "jsCode": "// ── Handle slash commands ─────────────────────────────────────────────────\nconst { instanceId, groupId, commandName } = $json;\n\nif (!globalThis._botsabHistory) globalThis._botsabHistory = {};\nconst key = `${instanceId}:${groupId}`;\n\nlet reply;\nswitch (commandName) {\n  case 'help':\n    reply =\n      '🤖 AI Assistant — Commands\\n' +\n      '• /help   — show this list\\n' +\n      '• /reset  — clear conversation history\\n' +\n      '• /about  — about this bot\\n\\n' +\n      'Or just tag me with any question!';\n    break;\n\n  case 'reset':\n    delete globalThis._botsabHistory[key];\n    reply = '✅ Conversation history cleared. Fresh start!';\n    break;\n\n  case 'about':\n    reply =\n      '🤖 Powered by OpenAI GPT, integrated via Botsab.\\n' +\n      'I remember the last 10 messages in this group. Tag me anytime!';\n    break;\n\n  default:\n    reply = `❓ Unknown command: /${commandName}\\nType /help to see available commands.`;\n}\n\nreturn [{ json: { instanceId, groupId, reply } }];"
       },
       "id": "aa000006",
       "name": "Handle Command",
@@ -117,31 +117,30 @@
     },
     {
       "parameters": {
-        "jsCode": "// ── Build Claude API request with conversation history ─────────────────────\nconst { instanceId, groupId, senderId, query } = $json;\n\n// ── System prompt — customise this ────────────────────────────────────────\nconst today = new Date().toLocaleDateString('en-IN', {\n  weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',\n});\nconst SYSTEM = `You are a helpful AI assistant embedded in a WhatsApp group via Botsab.\n\nGuidelines:\n- Be concise: reply in under 200 words unless the question genuinely needs more.\n- Plain text only — NO markdown bold (**), NO italic (_), NO headers (##), NO triple backticks.\n- Use bullet points with • if listing things.\n- Friendly, warm tone.\n- If you do not know something, say so honestly.\n- Do not repeat the question back.\n- Today is ${today}.`;\n\n// ── Load per-group history ─────────────────────────────────────────────────\nif (!globalThis._botsabHistory) globalThis._botsabHistory = {};\nconst key = `${instanceId}:${groupId}`;\nif (!globalThis._botsabHistory[key]) globalThis._botsabHistory[key] = [];\n\nconst history  = globalThis._botsabHistory[key];\nconst messages = [ ...history.slice(-20), { role: 'user', content: query } ];\n\n// ── Build the full Anthropic request body ──────────────────────────────────\nconst claudeBody = JSON.stringify({\n  model:      'claude-haiku-4-5-20251001',\n  max_tokens: 600,\n  system:     SYSTEM,\n  messages,\n});\n\nreturn [{ json: { instanceId, groupId, senderId, query, claudeBody } }];"
+        "jsCode": "// ── Build OpenAI API request with conversation history ────────────────────\nconst { instanceId, groupId, senderId, query } = $json;\n\n// ── System prompt — customise this ────────────────────────────────────────\nconst today = new Date().toLocaleDateString('en-IN', {\n  weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',\n});\nconst SYSTEM = `You are a helpful AI assistant embedded in a WhatsApp group via Botsab.\n\nGuidelines:\n- Be concise: reply in under 200 words unless the question genuinely needs more.\n- Plain text only — NO markdown bold (**), NO italic (_), NO headers (##), NO triple backticks.\n- Use bullet points with • if listing things.\n- Friendly, warm tone.\n- If you do not know something, say so honestly.\n- Do not repeat the question back.\n- Today is ${today}.`;\n\n// ── Load per-group history ─────────────────────────────────────────────────\nif (!globalThis._botsabHistory) globalThis._botsabHistory = {};\nconst key = `${instanceId}:${groupId}`;\nif (!globalThis._botsabHistory[key]) globalThis._botsabHistory[key] = [];\n\nconst history  = globalThis._botsabHistory[key];\n// OpenAI: system message is the first entry in messages array\nconst messages = [\n  { role: 'system', content: SYSTEM },\n  ...history.slice(-20),\n  { role: 'user', content: query },\n];\n\n// ── Build the full OpenAI request body ────────────────────────────────────\nconst openaiBody = JSON.stringify({\n  model:      'gpt-4o-mini',\n  max_tokens: 600,\n  messages,\n});\n\nreturn [{ json: { instanceId, groupId, senderId, query, openaiBody } }];"
       },
       "id": "aa000008",
       "name": "Build AI Request",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [1120, 360],
-      "notes": "Change model to 'claude-sonnet-4-6' for higher quality. Edit SYSTEM prompt to match your group's purpose."
+      "notes": "Change model to 'gpt-4o' for higher quality. Edit SYSTEM prompt to match your group's purpose."
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "https://api.anthropic.com/v1/messages",
+        "url": "https://api.openai.com/v1/chat/completions",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            { "name": "x-api-key", "value": "REPLACE_WITH_YOUR_ANTHROPIC_KEY" },
-            { "name": "anthropic-version", "value": "2023-06-01" },
+            { "name": "Authorization", "value": "Bearer REPLACE_WITH_YOUR_OPENAI_KEY" },
             { "name": "content-type", "value": "application/json" }
           ]
         },
         "sendBody": true,
         "contentType": "raw",
         "rawContentType": "application/json",
-        "body": "={{ $json.claudeBody }}",
+        "body": "={{ $json.openaiBody }}",
         "options": {
           "response": {
             "response": { "responseFormat": "json" }
@@ -150,7 +149,7 @@
         "onError": "continueErrorOutput"
       },
       "id": "aa000009",
-      "name": "Call Claude AI",
+      "name": "Call OpenAI",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [1340, 360],
@@ -158,17 +157,17 @@
     },
     {
       "parameters": {
-        "jsCode": "// ── Error fallback when Claude API is unreachable ─────────────────────────\nconst ctx = $('Build AI Request').item.json;\nreturn [{ json: {\n  instanceId: ctx.instanceId,\n  groupId:    ctx.groupId,\n  reply:      '⚠️ Sorry, I could not reach the AI service right now. Please try again in a moment.',\n} }];"
+        "jsCode": "// ── Error fallback when OpenAI API is unreachable ─────────────────────────\nconst ctx = $('Build AI Request').item.json;\nreturn [{ json: {\n  instanceId: ctx.instanceId,\n  groupId:    ctx.groupId,\n  reply:      '⚠️ Sorry, I could not reach the AI service right now. Please try again in a moment.',\n} }];"
       },
       "id": "aa000010",
-      "name": "Claude Error Fallback",
+      "name": "OpenAI Error Fallback",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [1560, 500]
     },
     {
       "parameters": {
-        "jsCode": "// ── Extract reply text + persist to history ───────────────────────────────\nconst aiResp   = $json;\nconst replyText = aiResp.content?.[0]?.text?.trim()\n  ?? 'Sorry, I could not generate a response. Please try again.';\n\nconst ctx = $('Build AI Request').item.json;\nconst { instanceId, groupId, query } = ctx;\n\n// Persist exchange\nif (!globalThis._botsabHistory) globalThis._botsabHistory = {};\nconst key = `${instanceId}:${groupId}`;\nif (!globalThis._botsabHistory[key]) globalThis._botsabHistory[key] = [];\n\nglobalThis._botsabHistory[key].push(\n  { role: 'user',      content: query     },\n  { role: 'assistant', content: replyText },\n);\n\n// Keep last 20 messages (10 exchanges)\nif (globalThis._botsabHistory[key].length > 20) {\n  globalThis._botsabHistory[key] = globalThis._botsabHistory[key].slice(-20);\n}\n\nreturn [{ json: { instanceId, groupId, reply: replyText } }];"
+        "jsCode": "// ── Extract reply text + persist to history ───────────────────────────────\nconst aiResp   = $json;\nconst replyText = aiResp.choices?.[0]?.message?.content?.trim()\n  ?? 'Sorry, I could not generate a response. Please try again.';\n\nconst ctx = $('Build AI Request').item.json;\nconst { instanceId, groupId, query } = ctx;\n\n// Persist exchange (store only user/assistant turns, not system)\nif (!globalThis._botsabHistory) globalThis._botsabHistory = {};\nconst key = `${instanceId}:${groupId}`;\nif (!globalThis._botsabHistory[key]) globalThis._botsabHistory[key] = [];\n\nglobalThis._botsabHistory[key].push(\n  { role: 'user',      content: query     },\n  { role: 'assistant', content: replyText },\n);\n\n// Keep last 20 messages (10 exchanges)\nif (globalThis._botsabHistory[key].length > 20) {\n  globalThis._botsabHistory[key] = globalThis._botsabHistory[key].slice(-20);\n}\n\nreturn [{ json: { instanceId, groupId, reply: replyText } }];"
       },
       "id": "aa000011",
       "name": "Save & Format Reply",
@@ -233,13 +232,13 @@
     },
     "Build AI Request": {
       "main": [
-        [{ "node": "Call Claude AI", "type": "main", "index": 0 }]
+        [{ "node": "Call OpenAI", "type": "main", "index": 0 }]
       ]
     },
-    "Call Claude AI": {
+    "Call OpenAI": {
       "main": [
-        [{ "node": "Save & Format Reply",  "type": "main", "index": 0 }],
-        [{ "node": "Claude Error Fallback", "type": "main", "index": 0 }]
+        [{ "node": "Save & Format Reply",   "type": "main", "index": 0 }],
+        [{ "node": "OpenAI Error Fallback",  "type": "main", "index": 0 }]
       ]
     },
     "Save & Format Reply": {
@@ -247,7 +246,7 @@
         [{ "node": "Send AI Reply", "type": "main", "index": 0 }]
       ]
     },
-    "Claude Error Fallback": {
+    "OpenAI Error Fallback": {
       "main": [
         [{ "node": "Send AI Reply", "type": "main", "index": 0 }]
       ]

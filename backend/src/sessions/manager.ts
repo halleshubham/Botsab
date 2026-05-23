@@ -122,9 +122,18 @@ class SessionManager {
         const isGroup = remoteJid.endsWith("@g.us");
         const senderId = isGroup ? (msg.key.participant ?? "") : remoteJid;
 
-        // Normalize bot JID: "919607459969:15@s.whatsapp.net" → "919607459969@s.whatsapp.net"
+        // Strip device suffix while keeping the domain: "919607459969:15@s.whatsapp.net" → "919607459969@s.whatsapp.net"
+        const normalizeJid = (jid: string) => {
+          const atIdx = jid.lastIndexOf("@");
+          const domain = atIdx !== -1 ? jid.slice(atIdx) : "@s.whatsapp.net";
+          const user = (atIdx !== -1 ? jid.slice(0, atIdx) : jid).split(":")[0];
+          return user + domain;
+        };
+
         const rawBotJid = socket.user?.id ?? "";
-        const normalizedBotJid = rawBotJid.split(":")[0].split("@")[0] + "@s.whatsapp.net";
+        const normalizedBotJid = normalizeJid(rawBotJid);
+        // Bot may also appear as a @lid JID in newer WhatsApp groups
+        const normalizedBotLid = socket.user?.lid ? normalizeJid(socket.user.lid) : null;
 
         const text =
           msg.message?.conversation ??
@@ -134,9 +143,12 @@ class SessionManager {
           null;
 
         const mentions: string[] =
-          (msg.message?.extendedTextMessage?.contextInfo?.mentionedJid as string[] | undefined) ?? [];
+          ((msg.message?.extendedTextMessage?.contextInfo?.mentionedJid as string[] | undefined) ?? [])
+            .map(normalizeJid);
 
-        const isMentioned = mentions.includes(normalizedBotJid);
+        const isMentioned =
+          mentions.includes(normalizedBotJid) ||
+          (normalizedBotLid !== null && mentions.includes(normalizedBotLid));
 
         const enriched = {
           id: msg.key.id,
