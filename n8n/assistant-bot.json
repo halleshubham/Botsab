@@ -141,11 +141,7 @@
         "contentType": "raw",
         "rawContentType": "application/json",
         "body": "={{ $json.openaiBody }}",
-        "options": {
-          "response": {
-            "response": { "responseFormat": "json" }
-          }
-        },
+        "options": {},
         "onError": "continueErrorOutput"
       },
       "id": "aa000009",
