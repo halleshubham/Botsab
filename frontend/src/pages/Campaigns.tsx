@@ -67,23 +67,27 @@ export function Campaigns() {
   const { data: instances = [] } = useQuery({
     queryKey: ["instances"],
     queryFn: () => listInstances().then((r) => r.data),
+    select: (d) => Array.isArray(d) ? d : [],
   });
   const connectedInstances = instances.filter((i) => i.status === "connected");
 
   const { data: contactLists = [] } = useQuery({
     queryKey: ["contact-lists"],
     queryFn: () => listContactLists().then((r) => r.data),
+    select: (d) => Array.isArray(d) ? d : [],
   });
 
   const { data: groupLists = [] } = useQuery({
     queryKey: ["group-lists"],
     queryFn: () => listGroupLists().then((r) => r.data),
+    select: (d) => Array.isArray(d) ? d : [],
   });
 
   const { data: campaigns = [], refetch: refetchCampaigns } = useQuery({
     queryKey: ["campaigns", instanceId],
     queryFn: () => listCampaigns(instanceId).then((r) => r.data),
     enabled: !!instanceId,
+    select: (d) => Array.isArray(d) ? d : [],
     refetchInterval: (query) => {
       const data = query.state.data;
       if (!data) return false;

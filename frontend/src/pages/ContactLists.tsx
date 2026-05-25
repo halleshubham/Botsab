@@ -32,6 +32,7 @@ export function ContactLists() {
   const { data: lists = [] } = useQuery({
     queryKey: ["contact-lists"],
     queryFn: () => listContactLists().then((r) => r.data),
+    select: (d) => Array.isArray(d) ? d : [],
   });
 
   const { data: detail } = useQuery({

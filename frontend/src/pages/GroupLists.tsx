@@ -39,6 +39,7 @@ export function GroupLists() {
   const { data: lists = [] } = useQuery({
     queryKey: ["group-lists"],
     queryFn: () => listGroupLists().then((r) => r.data),
+    select: (d) => Array.isArray(d) ? d : [],
   });
 
   // Detail of selected list
@@ -52,6 +53,7 @@ export function GroupLists() {
   const { data: instances = [] } = useQuery({
     queryKey: ["instances"],
     queryFn: () => listInstances().then((r) => r.data),
+    select: (d) => Array.isArray(d) ? d : [],
   });
   const connectedInstances = instances.filter((i) => i.status === "connected");
 
@@ -60,6 +62,7 @@ export function GroupLists() {
     queryKey: ["groups", pickerInstance],
     queryFn: () => listGroups(pickerInstance).then((r) => r.data),
     enabled: !!pickerInstance,
+    select: (d) => Array.isArray(d) ? d : [],
   });
 
   // Sendable groups: exclude announce (only admins can post)
