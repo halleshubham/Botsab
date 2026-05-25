@@ -21,14 +21,14 @@ api.interceptors.response.use(
 );
 
 // Auth
-export const register = (email: string, password: string) =>
-  api.post<{ userId: string; apiKey: string; role: string }>("/auth/register", { email, password });
+export const register = (email: string, password: string, plan = "starter") =>
+  api.post<{ userId: string; apiKey: string; role: string; status: string }>("/auth/register", { email, password, plan });
 
 export const login = (email: string, password: string) =>
   api.post<{ userId: string; role: string; apiKey: string }>("/auth/login", { email, password });
 
 export const getMe = () =>
-  api.get<{ userId: string; email: string; role: string; instanceLimit: number }>("/auth/me");
+  api.get<{ userId: string; email: string; role: string; instanceLimit: number; status: string; plan: string }>("/auth/me");
 
 // Keys
 export type ApiKey = { id: string; label: string; lastUsedAt: string | null; createdAt: string };
@@ -76,10 +76,14 @@ export type AdminUser = {
   instanceLimit: number;
   instanceCount: number;
   createdAt: string;
+  status: string;
+  plan: string;
 };
 export const listAdminUsers = () => api.get<AdminUser[]>("/admin/users");
 export const updateAdminUser = (userId: string, data: { instanceLimit?: number; role?: string }) =>
   api.patch<{ id: string; email: string; role: string; instanceLimit: number }>(`/admin/users/${userId}`, data);
+export const approvePendingUser = (userId: string) =>
+  api.post<{ id: string; email: string; instanceLimit: number; status: string; plan: string }>(`/admin/users/${userId}/approve`);
 
 // Groups
 export type Group = {

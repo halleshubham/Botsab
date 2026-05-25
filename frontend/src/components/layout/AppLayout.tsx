@@ -1,20 +1,26 @@
-import { useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Outlet, Navigate } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { getMe } from "@/lib/api";
 
 export function AppLayout() {
   const apiKey = localStorage.getItem("apiKey");
+  const [status, setStatus] = useState(localStorage.getItem("status") ?? "active");
 
   useEffect(() => {
     if (!apiKey) return;
-    // Hydrate role on every app load so it stays fresh
     getMe()
-      .then(({ data }) => localStorage.setItem("role", data.role))
+      .then(({ data }) => {
+        localStorage.setItem("role", data.role);
+        localStorage.setItem("status", data.status);
+        localStorage.setItem("plan", data.plan);
+        setStatus(data.status);
+      })
       .catch(() => {});
   }, [apiKey]);
 
   if (!apiKey) return <Navigate to="/login" replace />;
+  if (status === "pending") return <Navigate to="/pending" replace />;
 
   return (
     <div className="flex h-screen overflow-hidden">

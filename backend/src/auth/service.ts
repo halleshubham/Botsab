@@ -36,7 +36,13 @@ export async function revokeApiKey(keyId: string, userId: string) {
   return count > 0;
 }
 
-export async function registerUser(email: string, password: string) {
+const PLAN_LIMITS: Record<string, number> = {
+  starter: 3,
+  pro: 10,
+  business: -1,
+};
+
+export async function registerUser(email: string, password: string, plan = "starter") {
   const existing = await db("users").where({ email }).first();
   if (existing) throw new Error("Email already registered");
 
@@ -46,19 +52,23 @@ export async function registerUser(email: string, password: string) {
     config.superadminEmail.length > 0 &&
     email.toLowerCase() === config.superadminEmail.toLowerCase();
 
+  const validPlan = PLAN_LIMITS[plan] !== undefined ? plan : "starter";
+
   const [user] = await db("users")
     .insert({
       id: crypto.randomUUID(),
       email,
       password_hash,
       role: isSuperadmin ? "superadmin" : "user",
-      // -1 = unlimited for superadmin; 0 = blocked until admin grants capacity
+      // Superadmin is active immediately; regular users wait for approval
+      status: isSuperadmin ? "active" : "pending",
+      plan: isSuperadmin ? "business" : validPlan,
       instance_limit: isSuperadmin ? -1 : 0,
     })
-    .returning(["id", "email", "role", "created_at"]);
+    .returning(["id", "email", "role", "status", "plan", "created_at"]);
 
   const apiKey = await createApiKey(user.id, "default");
-  return { userId: user.id, apiKey: apiKey.key, role: user.role };
+  return { userId: user.id, apiKey: apiKey.key, role: user.role, status: user.status };
 }
 
 export async function loginUser(email: string, password: string) {

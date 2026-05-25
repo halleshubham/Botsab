@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Smartphone, Key, Webhook, LogOut, BookOpen, Users, ShieldCheck, Phone, List, Megaphone } from "lucide-react";
+import { LayoutDashboard, Smartphone, Key, Webhook, LogOut, BookOpen, Users, ShieldCheck, Phone, List, Megaphone, Bot } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
 const BASE_LINKS = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/instances", label: "Instances", icon: Smartphone },
   { to: "/groups", label: "Groups", icon: Users },
   { to: "/contact-lists", label: "Contact Lists", icon: Phone },
@@ -43,15 +43,16 @@ export function Sidebar() {
 
   return (
     <aside className="flex h-screen w-56 flex-col border-r bg-card">
-      <div className="flex h-14 items-center border-b px-6">
-        <span className="text-lg font-bold text-primary">Botsab</span>
+      <div className="flex h-14 items-center border-b px-6 gap-2">
+        <Bot className="h-5 w-5 text-primary" />
+        <span className="text-lg font-bold">Botsab</span>
       </div>
       <nav className="flex-1 space-y-1 p-3">
         {links.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
             to={to}
-            end={to === "/"}
+            end={to === "/dashboard"}
             className={({ isActive }) =>
               cn(
                 "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",

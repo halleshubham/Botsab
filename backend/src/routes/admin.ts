@@ -10,7 +10,7 @@ router.use(requireSuperadmin);
 
 router.get("/users", async (_req: Request, res: Response) => {
   const users = await db("users")
-    .select("id", "email", "role", "instance_limit", "created_at")
+    .select("id", "email", "role", "instance_limit", "status", "plan", "created_at")
     .orderBy("created_at", "asc");
 
   const counts = await db("instances")
@@ -28,8 +28,43 @@ router.get("/users", async (_req: Request, res: Response) => {
       instanceLimit: Number(u.instance_limit),
       instanceCount: countMap[u.id] ?? 0,
       createdAt: u.created_at,
+      status: u.status ?? "active",
+      plan: u.plan ?? "starter",
     }))
   );
+});
+
+const PLAN_LIMITS: Record<string, number> = {
+  starter: 3,
+  pro: 10,
+  business: -1,
+};
+
+router.post("/users/:userId/approve", async (req: Request, res: Response) => {
+  const target = await db("users").where({ id: req.params.userId }).first();
+  if (!target) return res.status(404).json({ error: "User not found" });
+  if (target.status !== "pending") return res.status(400).json({ error: "User is not pending" });
+
+  const defaultLimit = PLAN_LIMITS[target.plan] ?? 3;
+  const update: Record<string, unknown> = { status: "active" };
+  // Set instance_limit from plan only if admin hasn't manually changed it yet (still 0)
+  if (Number(target.instance_limit) === 0) {
+    update.instance_limit = defaultLimit;
+  }
+
+  const [updated] = await db("users")
+    .where({ id: req.params.userId })
+    .update(update)
+    .returning(["id", "email", "role", "instance_limit", "status", "plan"]);
+
+  res.json({
+    id: updated.id,
+    email: updated.email,
+    role: updated.role,
+    instanceLimit: Number(updated.instance_limit),
+    status: updated.status,
+    plan: updated.plan,
+  });
 });
 
 router.patch("/users/:userId", async (req: Request, res: Response) => {
