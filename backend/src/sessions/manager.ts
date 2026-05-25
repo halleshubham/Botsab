@@ -262,7 +262,7 @@ class SessionManager {
 
     socket.ev.on("contacts.update", async (updates) => {
       for (const upd of updates) {
-        if (!upd.id.endsWith("@s.whatsapp.net")) continue;
+        if (!upd.id || !upd.id.endsWith("@s.whatsapp.net")) continue;
         const patch: Record<string, unknown> = { updated_at: new Date() };
         if (upd.name !== undefined) patch.name = upd.name;
         if (upd.notify !== undefined) patch.notify = upd.notify;

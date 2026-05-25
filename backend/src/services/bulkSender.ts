@@ -175,7 +175,7 @@ export async function runCampaign(campaignId: string): Promise<void> {
     for (let i = 0; i < recipients.length; i += CHUNK) {
       const chunk = recipients.slice(i, i + CHUNK);
       try {
-        const results = await meta.socket.onWhatsApp(...chunk);
+        const results = (await meta.socket.onWhatsApp(...chunk)) ?? [];
         for (let j = 0; j < chunk.length; j++) {
           if (results[j]?.exists) {
             valid.push(chunk[j]);
