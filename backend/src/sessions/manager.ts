@@ -238,7 +238,39 @@ class SessionManager {
       await webhookDispatcher.send(instanceId, "group.update", { updates: updates as unknown as Record<string, unknown>[] });
     });
 
+    // Persist contacts to DB so the UI can offer a "pick from phone contacts" picker.
+    // Only store regular @s.whatsapp.net JIDs (not groups, broadcasts, or status).
+    socket.ev.on("contacts.upsert", async (contacts) => {
+      const rows = contacts
+        .filter((c) => c.id.endsWith("@s.whatsapp.net"))
+        .map((c) => ({
+          id: crypto.randomUUID(),
+          instance_id: instanceId,
+          jid: c.id,
+          phone_number: c.id.split(":")[0].split("@")[0],
+          name: c.name ?? null,
+          notify: c.notify ?? null,
+          updated_at: new Date(),
+        }));
+      if (rows.length === 0) return;
+      await db("whatsapp_contacts")
+        .insert(rows)
+        .onConflict(["instance_id", "jid"])
+        .merge(["name", "notify", "updated_at"])
+        .catch(() => {});
+    });
+
     socket.ev.on("contacts.update", async (updates) => {
+      for (const upd of updates) {
+        if (!upd.id.endsWith("@s.whatsapp.net")) continue;
+        const patch: Record<string, unknown> = { updated_at: new Date() };
+        if (upd.name !== undefined) patch.name = upd.name;
+        if (upd.notify !== undefined) patch.notify = upd.notify;
+        db("whatsapp_contacts")
+          .where({ instance_id: instanceId, jid: upd.id })
+          .update(patch)
+          .catch(() => {});
+      }
       this.emit(instanceId, "contact.update", { updates });
       await webhookDispatcher.send(instanceId, "contact.update", { updates: updates as unknown as Record<string, unknown>[] });
     });

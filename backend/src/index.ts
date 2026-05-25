@@ -18,6 +18,7 @@ import adminRouter from "./routes/admin";
 import contactListsRouter from "./routes/contactLists";
 import groupListsRouter from "./routes/groupLists";
 import campaignsRouter from "./routes/campaigns";
+import phoneContactsRouter from "./routes/phoneContacts";
 
 const app = express();
 
@@ -45,6 +46,7 @@ app.use("/instances/:instanceId/messages", messagesRouter);
 app.use("/instances/:instanceId/groups", groupsRouter);
 app.use("/instances/:instanceId/webhook", webhooksRouter);
 app.use("/instances/:instanceId/campaigns", campaignsRouter);
+app.use("/instances/:instanceId/phone-contacts", phoneContactsRouter);
 app.use("/contact-lists", contactListsRouter);
 app.use("/group-lists", groupListsRouter);
 app.use("/admin", adminRouter);

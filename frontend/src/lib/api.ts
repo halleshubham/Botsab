@@ -93,6 +93,16 @@ export type Group = {
 export const listGroups = (instanceId: string) =>
   api.get<Group[]>(`/instances/${instanceId}/groups`);
 
+// Phone contacts (synced from the WhatsApp account's address book)
+export type PhoneContact = {
+  jid: string;
+  phone_number: string;
+  name: string | null;
+  notify: string | null;
+};
+export const listPhoneContacts = (instanceId: string, q?: string) =>
+  api.get<PhoneContact[]>(`/instances/${instanceId}/phone-contacts`, { params: q ? { q } : {} });
+
 // Contact Lists
 export type ContactListMember = {
   id: string;
