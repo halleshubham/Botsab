@@ -15,6 +15,8 @@ export default defineConfig({
       "/auth": "http://localhost:3000",
       "/keys": "http://localhost:3000",
       "/instances": "http://localhost:3000",
+      "/contact-lists": "http://localhost:3000",
+      "/group-lists": "http://localhost:3000",
       "/admin": {
         target: "http://localhost:3000",
         bypass(req) {
