@@ -35,6 +35,35 @@ export interface SessionMeta {
   sessionsDir: string;
   qr?: string;
   status: "qr_pending" | "connected" | "disconnected";
+  presenceActive: boolean; // controls the presence-cycling loop
+}
+
+// ── Presence simulation ───────────────────────────────────────────────────────
+// Cycles the instance between "available" and "unavailable" to mimic a human
+// opening/closing WhatsApp throughout the day.
+
+const PRESENCE_ACTIVE_START = 8;  // hour (local server time) when account "wakes up"
+const PRESENCE_ACTIVE_END   = 22; // hour when account "goes to sleep"
+
+function randMs(minMin: number, maxMin: number): number {
+  return (minMin + Math.random() * (maxMin - minMin)) * 60_000;
+}
+
+async function runPresenceCycle(meta: SessionMeta): Promise<void> {
+  if (!meta.presenceActive) return;
+
+  const hour = new Date().getHours();
+  const isDay = hour >= PRESENCE_ACTIVE_START && hour < PRESENCE_ACTIVE_END;
+
+  try {
+    // During active hours: online ~60% of checks; always offline at night
+    const goOnline = isDay && Math.random() < 0.6;
+    await meta.socket.sendPresenceUpdate(goOnline ? "available" : "unavailable");
+  } catch { /* socket may not be ready yet */ }
+
+  // Re-schedule: every 20–50 minutes during the day, less often at night
+  const delay = isDay ? randMs(20, 50) : randMs(40, 90);
+  setTimeout(() => runPresenceCycle(meta), delay);
 }
 
 class SessionManager {
@@ -75,6 +104,7 @@ class SessionManager {
       instanceId,
       sessionsDir,
       status: "disconnected",
+      presenceActive: false,
     };
 
     this.sessions.set(instanceId, meta);
@@ -101,12 +131,18 @@ class SessionManager {
         this.emit(instanceId, "connection.open", { phone });
         await webhookDispatcher.send(instanceId, "connection.open", { phone });
         logger.info({ instanceId, phone }, "Instance connected");
+
+        // Start human-like presence cycling (2–8 min initial delay to avoid
+        // an immediate "available" burst right after connect)
+        meta.presenceActive = true;
+        setTimeout(() => runPresenceCycle(meta), randMs(2, 8));
       }
 
       if (connection === "close") {
         const statusCode = (lastDisconnect?.error as Boom)?.output?.statusCode;
         const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
 
+        meta.presenceActive = false; // stops the presence-cycling loop
         meta.status = "disconnected";
         this.sessions.delete(instanceId);
         await this.syncStatus(instanceId, "disconnected");
@@ -215,6 +251,7 @@ class SessionManager {
   async destroySession(instanceId: InstanceId, purge = false): Promise<void> {
     const meta = this.sessions.get(instanceId);
     if (!meta) return;
+    meta.presenceActive = false;
     try {
       await meta.socket.logout();
     } catch {}
@@ -228,6 +265,7 @@ class SessionManager {
   async disconnectSession(instanceId: InstanceId): Promise<void> {
     const meta = this.sessions.get(instanceId);
     if (!meta) return;
+    meta.presenceActive = false;
     try {
       await meta.socket.end(undefined);
     } catch {}
