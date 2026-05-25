@@ -44,6 +44,12 @@ export function ContactLists() {
     select: (d) => Array.isArray(d) ? d : [],
   });
 
+  const { data: detail } = useQuery({
+    queryKey: ["contact-list", selectedId],
+    queryFn: () => getContactList(selectedId!).then((r) => r.data),
+    enabled: !!selectedId,
+  });
+
   const { data: instances = [] } = useQuery({
     queryKey: ["instances"],
     queryFn: () => listInstances().then((r) => r.data),
@@ -115,12 +121,6 @@ export function ContactLists() {
       setAddingPicked(false);
     }
   }
-
-  const { data: detail } = useQuery({
-    queryKey: ["contact-list", selectedId],
-    queryFn: () => getContactList(selectedId!).then((r) => r.data),
-    enabled: !!selectedId,
-  });
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
