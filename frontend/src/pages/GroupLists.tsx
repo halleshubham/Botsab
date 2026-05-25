@@ -81,7 +81,7 @@ export function GroupLists() {
   const filteredGroups = useMemo(() => {
     const q = groupSearch.toLowerCase();
     return sendableGroups.filter(
-      (g) => !existingJids.has(g.id) && (q === "" || g.name.toLowerCase().includes(q))
+      (g) => !existingJids.has(g.id) && (q === "" || (g.name ?? "").toLowerCase().includes(q))
     );
   }, [sendableGroups, groupSearch, existingJids]);
 
