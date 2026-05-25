@@ -167,6 +167,11 @@ export type BulkCampaignOptions = {
   sendTypingIndicator: boolean;
   markReadBeforeSend: boolean;
   maxRecipients: number;
+  sendStartHour: number;
+  sendEndHour: number;
+  dailyLimit: number;
+  checkNumberExists: boolean;
+  respectOptOut: boolean;
 };
 export type CampaignResult = {
   recipient: string;

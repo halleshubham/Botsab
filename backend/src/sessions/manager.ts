@@ -4,15 +4,27 @@ import makeWASocket, {
   fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
   WASocket,
+  Browsers,
 } from "@whiskeysockets/baileys";
 import { Boom } from "@hapi/boom";
 import pino from "pino";
+import crypto from "crypto";
 import fs from "fs/promises";
 import path from "path";
 import { db } from "../db";
 import { webhookDispatcher } from "../webhooks/dispatcher";
 import { config } from "../config";
 import { logger } from "../utils/logger";
+
+// Keywords that indicate a recipient wants to opt out of messages
+const OPT_OUT_PATTERNS = [
+  /^\s*stop\b/i,
+  /^\s*unsubscribe\b/i,
+  /^\s*opt.?out\b/i,
+  /^\s*remove\s+me\b/i,
+  /^\s*do\s+not\s+(contact|message)\b/i,
+  /^\s*please\s+(stop|don['']?t|do\s+not)\b/i,
+];
 
 export type InstanceId = string;
 
@@ -50,9 +62,9 @@ class SessionManager {
       },
       printQRInTerminal: false,
       logger: pino({ level: "silent" }),
-      browser: ["Botsab", "Chrome", "1.0.0"],
+      browser: Browsers.ubuntu("Chrome"),
       syncFullHistory: false,
-      generateHighQualityLinkPreview: true,
+      generateHighQualityLinkPreview: false,
       // Required for Baileys to handle group encryption retries
       getMessage: async () => ({ conversation: "" }),
     });
@@ -160,6 +172,17 @@ class SessionManager {
           mentions,
           isMentioned,
         };
+
+        // Opt-out detection: record STOP/unsubscribe replies so bulk campaigns skip this contact
+        if (text && OPT_OUT_PATTERNS.some((p) => p.test(text))) {
+          const optOutJid = normalizeJid(senderId);
+          db("opt_outs")
+            .insert({ id: crypto.randomUUID(), instance_id: instanceId, jid: optOutJid })
+            .onConflict(["instance_id", "jid"])
+            .ignore()
+            .catch(() => {});
+          logger.info({ instanceId, jid: optOutJid }, "Opt-out recorded");
+        }
 
         this.emit(instanceId, "message.received", { message: msg, enriched });
         await webhookDispatcher.send(instanceId, "message.received", {

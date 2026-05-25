@@ -39,6 +39,11 @@ const DEFAULT_OPTS: BulkCampaignOptions = {
   sendTypingIndicator: true,
   markReadBeforeSend: true,
   maxRecipients: 50,
+  sendStartHour: 8,
+  sendEndHour: 21,
+  dailyLimit: 150,
+  checkNumberExists: true,
+  respectOptOut: true,
 };
 
 function ProgressBar({ sent, failed, total }: { sent: number; failed: number; total: number }) {
@@ -59,6 +64,8 @@ export function Campaigns() {
   const [listType, setListType] = useState<"contact" | "group">("contact");
   const [listId, setListId] = useState("");
   const [msgText, setMsgText] = useState("");
+  const [msgVariants, setMsgVariants] = useState("");
+  const [showVariants, setShowVariants] = useState(false);
   const [showOpts, setShowOpts] = useState(false);
   const [opts, setOpts] = useState<BulkCampaignOptions>({ ...DEFAULT_OPTS });
   const [creating, setCreating] = useState(false);
@@ -116,13 +123,17 @@ export function Campaigns() {
     if (!instanceId || !listId || !msgText.trim()) return;
     setCreating(true);
     try {
+      const variants = showVariants
+        ? [msgText.trim(), ...msgVariants.split("\n").map((s) => s.trim()).filter(Boolean)]
+        : undefined;
       const { data } = await createCampaign(instanceId, {
         list_type: listType,
         list_id: listId,
-        message: { type: "text", text: msgText.trim() },
+        message: { type: "text", text: msgText.trim(), ...(variants ? { variants } : {}) },
         options: opts,
       });
       setMsgText("");
+      setMsgVariants("");
       qc.invalidateQueries({ queryKey: ["campaigns", instanceId] });
       setSelectedCampaignId(data.id);
       toast({ title: "Campaign started", description: `ID: ${data.id.slice(0, 8)}…` });
@@ -210,6 +221,26 @@ export function Campaigns() {
                 maxLength={4096}
               />
               <p className="text-xs text-muted-foreground text-right">{msgText.length}/4096</p>
+            </div>
+
+            {/* Message variants */}
+            <div className="space-y-1">
+              <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={showVariants}
+                  onChange={(e) => setShowVariants(e.target.checked)}
+                />
+                <span>Add message variants <span className="text-muted-foreground">(each recipient gets a random version — reduces duplicate-message flags)</span></span>
+              </label>
+              {showVariants && (
+                <textarea
+                  className="w-full h-20 rounded-md border border-input bg-background px-3 py-2 text-sm font-mono resize-y focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  placeholder={"One alternative message per line:\nHey, saw you were interested!\nHi there, quick message for you…"}
+                  value={msgVariants}
+                  onChange={(e) => setMsgVariants(e.target.value)}
+                />
+              )}
             </div>
 
             {/* Advanced options toggle */}
@@ -337,11 +368,65 @@ export function Campaigns() {
                     )}
                   </div>
 
+                  {/* Send window + daily limit */}
+                  <div className="grid gap-3 sm:grid-cols-3 pt-1 border-t">
+                    <div className="space-y-1">
+                      <Label className="text-xs">Send window start (hour, 0–23)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={23}
+                        value={opts.sendStartHour}
+                        onChange={(e) => setOpt("sendStartHour", Number(e.target.value))}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Send window end (hour, 0–23)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={23}
+                        value={opts.sendEndHour}
+                        onChange={(e) => setOpt("sendEndHour", Number(e.target.value))}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Daily send limit (per instance)</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={200}
+                        value={opts.dailyLimit}
+                        onChange={(e) => setOpt("dailyLimit", Number(e.target.value))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-4 text-sm pt-1 border-t">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={opts.checkNumberExists}
+                        onChange={(e) => setOpt("checkNumberExists", e.target.checked)}
+                      />
+                      Verify numbers are on WhatsApp before sending
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={opts.respectOptOut}
+                        onChange={(e) => setOpt("respectOptOut", e.target.checked)}
+                      />
+                      Skip contacts who replied STOP/unsubscribe
+                    </label>
+                  </div>
+
                   <div className="text-xs text-muted-foreground space-y-0.5">
                     <p>• Each batch of {opts.batchSize} msgs is followed by a ~{Math.round(opts.batchPauseMs / 1000)}s pause</p>
                     <p>• Messages within a batch are spaced {opts.minDelayMs / 1000}–{opts.maxDelayMs / 1000}s apart (random)</p>
                     {opts.shuffle && <p>• Send order is randomised to avoid sequential patterns</p>}
                     {opts.appendSuffix && <p>• A unique {opts.suffixType} suffix makes each message distinct</p>}
+                    <p>• Sends only between {opts.sendStartHour}:00 and {opts.sendEndHour}:00 (server local time); max {opts.dailyLimit}/day per instance</p>
                   </div>
                 </div>
               )}
