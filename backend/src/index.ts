@@ -15,6 +15,9 @@ import messagesRouter from "./routes/messages";
 import groupsRouter from "./routes/groups";
 import webhooksRouter from "./routes/webhooks";
 import adminRouter from "./routes/admin";
+import contactListsRouter from "./routes/contactLists";
+import groupListsRouter from "./routes/groupLists";
+import campaignsRouter from "./routes/campaigns";
 
 const app = express();
 
@@ -41,6 +44,9 @@ app.use("/instances/:instanceId", connectRouter);
 app.use("/instances/:instanceId/messages", messagesRouter);
 app.use("/instances/:instanceId/groups", groupsRouter);
 app.use("/instances/:instanceId/webhook", webhooksRouter);
+app.use("/instances/:instanceId/campaigns", campaignsRouter);
+app.use("/contact-lists", contactListsRouter);
+app.use("/group-lists", groupListsRouter);
 app.use("/admin", adminRouter);
 
 app.get("/health", (_req, res) => res.json({ status: "ok" }));

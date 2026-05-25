@@ -91,3 +91,117 @@ export type Group = {
 };
 export const listGroups = (instanceId: string) =>
   api.get<Group[]>(`/instances/${instanceId}/groups`);
+
+// Contact Lists
+export type ContactListMember = {
+  id: string;
+  phone_number: string;
+  label: string | null;
+  created_at: string;
+};
+export type ContactList = {
+  id: string;
+  name: string;
+  description: string | null;
+  memberCount: number;
+  created_at: string;
+};
+export type ContactListDetail = ContactList & { members: ContactListMember[] };
+
+export const listContactLists = () => api.get<ContactList[]>("/contact-lists");
+export const createContactList = (name: string, description?: string) =>
+  api.post<ContactList>("/contact-lists", { name, description });
+export const getContactList = (listId: string) =>
+  api.get<ContactListDetail>(`/contact-lists/${listId}`);
+export const updateContactList = (listId: string, data: { name?: string; description?: string | null }) =>
+  api.put<ContactList>(`/contact-lists/${listId}`, data);
+export const deleteContactList = (listId: string) => api.delete(`/contact-lists/${listId}`);
+export const addContactListMembers = (
+  listId: string,
+  members: { phone_number: string; label?: string }[]
+) => api.post<{ added: number; skipped: number }>(`/contact-lists/${listId}/members`, { members });
+export const deleteContactListMember = (listId: string, memberId: string) =>
+  api.delete(`/contact-lists/${listId}/members/${memberId}`);
+
+// Group Lists
+export type GroupListMember = {
+  id: string;
+  group_jid: string;
+  label: string | null;
+  created_at: string;
+};
+export type GroupList = {
+  id: string;
+  name: string;
+  description: string | null;
+  memberCount: number;
+  created_at: string;
+};
+export type GroupListDetail = GroupList & { members: GroupListMember[] };
+
+export const listGroupLists = () => api.get<GroupList[]>("/group-lists");
+export const createGroupList = (name: string, description?: string) =>
+  api.post<GroupList>("/group-lists", { name, description });
+export const getGroupList = (listId: string) => api.get<GroupListDetail>(`/group-lists/${listId}`);
+export const updateGroupList = (listId: string, data: { name?: string; description?: string | null }) =>
+  api.put<GroupList>(`/group-lists/${listId}`, data);
+export const deleteGroupList = (listId: string) => api.delete(`/group-lists/${listId}`);
+export const addGroupListMembers = (
+  listId: string,
+  members: { group_jid: string; label?: string }[]
+) => api.post<{ added: number; skipped: number }>(`/group-lists/${listId}/members`, { members });
+export const deleteGroupListMember = (listId: string, memberId: string) =>
+  api.delete(`/group-lists/${listId}/members/${memberId}`);
+
+// Bulk Campaigns
+export type BulkCampaignOptions = {
+  minDelayMs: number;
+  maxDelayMs: number;
+  batchSize: number;
+  batchPauseMs: number;
+  shuffle: boolean;
+  appendSuffix: boolean;
+  suffixType: "invisible" | "hex";
+  suffixLength: number;
+  sendTypingIndicator: boolean;
+  markReadBeforeSend: boolean;
+  maxRecipients: number;
+};
+export type CampaignResult = {
+  recipient: string;
+  status: "sent" | "failed" | "skipped";
+  error: string | null;
+  sent_at: string | null;
+};
+export type Campaign = {
+  id: string;
+  list_type: "contact" | "group";
+  list_id: string;
+  message_payload: Record<string, unknown>;
+  options: BulkCampaignOptions;
+  status: "pending" | "running" | "completed" | "failed" | "cancelled";
+  total_count: number;
+  sent_count: number;
+  failed_count: number;
+  skipped_count: number;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+};
+export type CampaignDetail = Campaign & { results: CampaignResult[] };
+
+export const listCampaigns = (instanceId: string) =>
+  api.get<Campaign[]>(`/instances/${instanceId}/campaigns`);
+export const getCampaign = (instanceId: string, campaignId: string) =>
+  api.get<CampaignDetail>(`/instances/${instanceId}/campaigns/${campaignId}`);
+export const createCampaign = (
+  instanceId: string,
+  data: {
+    list_type: "contact" | "group";
+    list_id: string;
+    message: Record<string, unknown>;
+    options?: Partial<BulkCampaignOptions>;
+  }
+) => api.post<{ id: string; status: string }>(`/instances/${instanceId}/campaigns`, data);
+export const cancelCampaign = (instanceId: string, campaignId: string) =>
+  api.post(`/instances/${instanceId}/campaigns/${campaignId}/cancel`);

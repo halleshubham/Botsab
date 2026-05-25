@@ -31,6 +31,11 @@ async function sendSingleMessage(instanceId: string, body: z.infer<typeof sendSc
     case "video":   content = { video: { url: body.url }, caption: body.caption }; break;
   }
 
+  // Mark chat as read before sending
+  try {
+    await meta.socket.chatModify({ markRead: true, lastMessages: [] }, body.to);
+  } catch {}
+
   const result = await meta.socket.sendMessage(
     body.to,
     content as Parameters<typeof meta.socket.sendMessage>[1]

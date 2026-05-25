@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { LayoutDashboard, Smartphone, Key, Webhook, LogOut, BookOpen, Users, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, Smartphone, Key, Webhook, LogOut, BookOpen, Users, ShieldCheck, Phone, List, Megaphone } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -8,6 +8,9 @@ const BASE_LINKS = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard },
   { to: "/instances", label: "Instances", icon: Smartphone },
   { to: "/groups", label: "Groups", icon: Users },
+  { to: "/contact-lists", label: "Contact Lists", icon: Phone },
+  { to: "/group-lists", label: "Group Lists", icon: List },
+  { to: "/campaigns", label: "Campaigns", icon: Megaphone },
   { to: "/keys", label: "API Keys", icon: Key },
   { to: "/webhooks", label: "Webhooks", icon: Webhook },
   { to: "/docs", label: "API Docs", icon: BookOpen },

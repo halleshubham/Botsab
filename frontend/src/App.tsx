@@ -10,6 +10,9 @@ import { Webhooks } from "@/pages/Webhooks";
 import { ApiDocs } from "@/pages/ApiDocs";
 import { Groups } from "@/pages/Groups";
 import { Admin } from "@/pages/Admin";
+import { ContactLists } from "@/pages/ContactLists";
+import { GroupLists } from "@/pages/GroupLists";
+import { Campaigns } from "@/pages/Campaigns";
 import { Toaster } from "@/components/ui/toaster";
 
 const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: 10_000 } } });
@@ -27,6 +30,9 @@ export default function App() {
             <Route path="/keys" element={<ApiKeys />} />
             <Route path="/webhooks" element={<Webhooks />} />
             <Route path="/groups" element={<Groups />} />
+            <Route path="/contact-lists" element={<ContactLists />} />
+            <Route path="/group-lists" element={<GroupLists />} />
+            <Route path="/campaigns" element={<Campaigns />} />
             <Route path="/admin" element={<Admin />} />
             <Route path="/docs" element={<ApiDocs />} />
           </Route>

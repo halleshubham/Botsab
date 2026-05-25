@@ -80,6 +80,11 @@ router.post("/:groupId/send", async (req: Request, res: Response) => {
     case "video":    content = { video: { url: body.url }, caption: body.caption }; break;
   }
 
+  // Mark chat as read before sending so the message appears after the bot has "seen" the conversation
+  try {
+    await meta.socket.chatModify({ markRead: true, lastMessages: [] }, jid);
+  } catch {}
+
   let lastErr: unknown;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
