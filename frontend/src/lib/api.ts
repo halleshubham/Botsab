@@ -25,7 +25,7 @@ export const register = (email: string, password: string) =>
   api.post<{ userId: string; apiKey: string; role: string }>("/auth/register", { email, password });
 
 export const login = (email: string, password: string) =>
-  api.post<{ userId: string; role: string }>("/auth/login", { email, password });
+  api.post<{ userId: string; role: string; apiKey: string }>("/auth/login", { email, password });
 
 export const getMe = () =>
   api.get<{ userId: string; email: string; role: string; instanceLimit: number }>("/auth/me");

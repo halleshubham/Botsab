@@ -68,5 +68,6 @@ export async function loginUser(email: string, password: string) {
   const valid = await bcrypt.compare(password, user.password_hash);
   if (!valid) throw new Error("Invalid credentials");
 
-  return { userId: user.id, role: user.role as string };
+  const apiKey = await createApiKey(user.id, `login-${new Date().toISOString().slice(0, 10)}`);
+  return { userId: user.id, role: user.role as string, apiKey: apiKey.key };
 }

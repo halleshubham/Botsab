@@ -20,6 +20,7 @@ export function Login() {
       const { data } = await login(email, password);
       localStorage.setItem("userId", data.userId);
       localStorage.setItem("role", data.role);
+      localStorage.setItem("apiKey", data.apiKey);
       navigate("/");
     } catch {
       toast({ title: "Login failed", description: "Check your credentials and try again.", variant: "destructive" });
