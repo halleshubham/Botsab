@@ -29,6 +29,7 @@ router.get("/", async (req: Request, res: Response) => {
       description: g.desc ?? null,
       participantCount: g.participants.length,
       createdAt: g.creation ? new Date(g.creation * 1000).toISOString() : null,
+      announce: g.announce ?? false,
     }))
   );
 });

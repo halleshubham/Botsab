@@ -1,44 +1,106 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, Users, ChevronRight, X, Upload } from "lucide-react";
+import { Plus, Trash2, Users, ChevronRight, X, Search, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
+  listInstances,
+  listGroups,
   listGroupLists,
   getGroupList,
   createGroupList,
   deleteGroupList,
   addGroupListMembers,
   deleteGroupListMember,
+  type Group,
   type GroupList,
 } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
 
 export function GroupLists() {
   const qc = useQueryClient();
+
+  // Left panel state
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [newListName, setNewListName] = useState("");
   const [newListDesc, setNewListDesc] = useState("");
   const [creating, setCreating] = useState(false);
-  const [addInput, setAddInput] = useState("");
-  const [addLabel, setAddLabel] = useState("");
-  const [adding, setAdding] = useState(false);
-  const [bulkText, setBulkText] = useState("");
-  const [showBulk, setShowBulk] = useState(false);
 
+  // Group picker state
+  const [pickerInstance, setPickerInstance] = useState("");
+  const [groupSearch, setGroupSearch] = useState("");
+  const [selectedJids, setSelectedJids] = useState<Set<string>>(new Set());
+  const [adding, setAdding] = useState(false);
+
+  // Existing lists
   const { data: lists = [] } = useQuery({
     queryKey: ["group-lists"],
     queryFn: () => listGroupLists().then((r) => r.data),
   });
 
+  // Detail of selected list
   const { data: detail } = useQuery({
     queryKey: ["group-list", selectedId],
     queryFn: () => getGroupList(selectedId!).then((r) => r.data),
     enabled: !!selectedId,
   });
+
+  // Connected instances for the picker
+  const { data: instances = [] } = useQuery({
+    queryKey: ["instances"],
+    queryFn: () => listInstances().then((r) => r.data),
+  });
+  const connectedInstances = instances.filter((i) => i.status === "connected");
+
+  // Live groups from the picked instance (exclude announce-only = admin-only)
+  const { data: liveGroups = [], isLoading: loadingGroups } = useQuery({
+    queryKey: ["groups", pickerInstance],
+    queryFn: () => listGroups(pickerInstance).then((r) => r.data),
+    enabled: !!pickerInstance,
+  });
+
+  // Sendable groups: exclude announce (only admins can post)
+  const sendableGroups = useMemo(
+    () => liveGroups.filter((g) => !g.announce),
+    [liveGroups]
+  );
+
+  // Already-in-list JIDs for duplicate highlighting
+  const existingJids = useMemo(
+    () => new Set((detail?.members ?? []).map((m) => m.group_jid)),
+    [detail]
+  );
+
+  // Filtered by search, excluding already-added groups
+  const filteredGroups = useMemo(() => {
+    const q = groupSearch.toLowerCase();
+    return sendableGroups.filter(
+      (g) => !existingJids.has(g.id) && (q === "" || g.name.toLowerCase().includes(q))
+    );
+  }, [sendableGroups, groupSearch, existingJids]);
+
+  const allSelected =
+    filteredGroups.length > 0 && filteredGroups.every((g) => selectedJids.has(g.id));
+
+  function handleSelectAll() {
+    if (allSelected) {
+      setSelectedJids(new Set());
+    } else {
+      setSelectedJids(new Set(filteredGroups.map((g) => g.id)));
+    }
+  }
+
+  function toggleJid(jid: string) {
+    setSelectedJids((prev) => {
+      const next = new Set(prev);
+      if (next.has(jid)) next.delete(jid);
+      else next.add(jid);
+      return next;
+    });
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -57,55 +119,26 @@ export function GroupLists() {
     }
   }
 
-  async function handleDelete(id: string) {
+  async function handleDeleteList(id: string) {
     await deleteGroupList(id);
     if (selectedId === id) setSelectedId(null);
     qc.invalidateQueries({ queryKey: ["group-lists"] });
     toast({ title: "List deleted" });
   }
 
-  async function handleAddSingle(e: React.FormEvent) {
-    e.preventDefault();
-    if (!selectedId || !addInput.trim()) return;
+  async function handleAddSelected() {
+    if (!selectedId || selectedJids.size === 0) return;
+    const members = Array.from(selectedJids).map((jid) => {
+      const g = sendableGroups.find((x) => x.id === jid);
+      return { group_jid: jid, label: g?.name };
+    });
     setAdding(true);
     try {
-      const { data } = await addGroupListMembers(selectedId, [
-        { group_jid: addInput.trim(), label: addLabel.trim() || undefined },
-      ]);
-      setAddInput("");
-      setAddLabel("");
+      const { data } = await addGroupListMembers(selectedId, members);
+      setSelectedJids(new Set());
       qc.invalidateQueries({ queryKey: ["group-list", selectedId] });
       qc.invalidateQueries({ queryKey: ["group-lists"] });
-      toast({ title: `Added ${data.added}, skipped ${data.skipped}` });
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? "Failed";
-      toast({ title: msg, variant: "destructive" });
-    } finally {
-      setAdding(false);
-    }
-  }
-
-  async function handleBulkImport() {
-    if (!selectedId || !bulkText.trim()) return;
-    const lines = bulkText
-      .split(/[\n,;]+/)
-      .map((l) => l.trim())
-      .filter((l) => l.length > 5);
-    if (lines.length === 0) {
-      toast({ title: "No valid JIDs found", variant: "destructive" });
-      return;
-    }
-    setAdding(true);
-    try {
-      const { data } = await addGroupListMembers(
-        selectedId,
-        lines.map((j) => ({ group_jid: j }))
-      );
-      setBulkText("");
-      setShowBulk(false);
-      qc.invalidateQueries({ queryKey: ["group-list", selectedId] });
-      qc.invalidateQueries({ queryKey: ["group-lists"] });
-      toast({ title: `Imported ${data.added} groups, ${data.skipped} duplicates skipped` });
+      toast({ title: `Added ${data.added} groups${data.skipped > 0 ? `, ${data.skipped} already in list` : ""}` });
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? "Failed";
       toast({ title: msg, variant: "destructive" });
@@ -129,7 +162,7 @@ export function GroupLists() {
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
-        {/* Left panel */}
+        {/* ── Left panel ── */}
         <div className="space-y-4">
           <Card>
             <CardHeader><CardTitle className="text-base">Create list</CardTitle></CardHeader>
@@ -185,7 +218,7 @@ export function GroupLists() {
                           size="icon"
                           variant="ghost"
                           className="h-7 w-7 text-destructive hover:text-destructive"
-                          onClick={(e) => { e.stopPropagation(); handleDelete(l.id); }}
+                          onClick={(e) => { e.stopPropagation(); handleDeleteList(l.id); }}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </Button>
@@ -199,9 +232,10 @@ export function GroupLists() {
           </Card>
         </div>
 
-        {/* Right panel */}
+        {/* ── Right panel ── */}
         {selectedId && detail ? (
           <div className="space-y-4">
+            {/* Group picker */}
             <Card>
               <CardHeader>
                 <div className="flex items-center justify-between">
@@ -212,54 +246,121 @@ export function GroupLists() {
                   <p className="text-sm text-muted-foreground">{detail.description}</p>
                 )}
               </CardHeader>
-              <CardContent className="space-y-4">
-                {/* Add single */}
-                <form onSubmit={handleAddSingle} className="flex gap-2">
-                  <Input
-                    placeholder="Group JID (e.g. 120363XXXXXXXX@g.us)"
-                    value={addInput}
-                    onChange={(e) => setAddInput(e.target.value)}
-                    className="flex-1 font-mono text-xs"
-                  />
-                  <Input
-                    placeholder="Label (optional)"
-                    value={addLabel}
-                    onChange={(e) => setAddLabel(e.target.value)}
-                    className="w-36"
-                  />
-                  <Button type="submit" size="sm" disabled={adding}>
-                    <Plus className="h-4 w-4" /> Add
-                  </Button>
-                </form>
-
-                <p className="text-xs text-muted-foreground">
-                  Tip: Copy group JIDs from the Groups page.
-                </p>
-
-                {/* Bulk import toggle */}
-                <div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setShowBulk((v) => !v)}
+              <CardContent className="space-y-3">
+                {/* Instance selector */}
+                <div className="space-y-1">
+                  <Label>Load groups from instance</Label>
+                  <select
+                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    value={pickerInstance}
+                    onChange={(e) => {
+                      setPickerInstance(e.target.value);
+                      setSelectedJids(new Set());
+                      setGroupSearch("");
+                    }}
                   >
-                    <Upload className="h-4 w-4" />
-                    {showBulk ? "Hide" : "Bulk import"}
-                  </Button>
-                  {showBulk && (
-                    <div className="mt-2 space-y-2">
-                      <textarea
-                        className="w-full h-28 rounded-md border border-input bg-background px-3 py-2 text-sm font-mono resize-y focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                        placeholder={"One group JID per line\n120363XXXXXXXX@g.us\n120363YYYYYYYY@g.us"}
-                        value={bulkText}
-                        onChange={(e) => setBulkText(e.target.value)}
-                      />
-                      <Button size="sm" disabled={adding} onClick={handleBulkImport}>
-                        Import {bulkText.split(/[\n,;]+/).filter((l) => l.trim().length > 5).length} groups
-                      </Button>
-                    </div>
+                    <option value="">— select a connected instance —</option>
+                    {connectedInstances.map((i) => (
+                      <option key={i.id} value={i.id}>
+                        {i.slug} ({i.phoneNumber ?? i.id})
+                      </option>
+                    ))}
+                  </select>
+                  {connectedInstances.length === 0 && (
+                    <p className="text-xs text-muted-foreground">No connected instances found.</p>
                   )}
                 </div>
+
+                {pickerInstance && (
+                  <>
+                    {/* Search */}
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
+                      <Input
+                        placeholder="Search groups…"
+                        value={groupSearch}
+                        onChange={(e) => setGroupSearch(e.target.value)}
+                        className="pl-8"
+                      />
+                    </div>
+
+                    {/* Select-all row + count */}
+                    {!loadingGroups && (
+                      <div className="flex items-center justify-between text-sm">
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            className="h-4 w-4 rounded border-input"
+                            checked={allSelected}
+                            onChange={handleSelectAll}
+                          />
+                          <span>
+                            {allSelected ? "Deselect all" : "Select all"}{" "}
+                            <span className="text-muted-foreground">({filteredGroups.length} sendable)</span>
+                          </span>
+                        </label>
+                        {selectedJids.size > 0 && (
+                          <span className="text-muted-foreground">{selectedJids.size} selected</span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Group list */}
+                    <div className="max-h-72 overflow-y-auto rounded-md border divide-y">
+                      {loadingGroups ? (
+                        <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+                          <Loader2 className="h-4 w-4 animate-spin" /> Loading groups…
+                        </div>
+                      ) : filteredGroups.length === 0 ? (
+                        <p className="px-3 py-4 text-sm text-muted-foreground text-center">
+                          {groupSearch
+                            ? "No groups match your search."
+                            : "All sendable groups are already in this list."}
+                        </p>
+                      ) : (
+                        filteredGroups.map((g: Group) => (
+                          <label
+                            key={g.id}
+                            className="flex items-center gap-3 px-3 py-2.5 hover:bg-accent/50 cursor-pointer"
+                          >
+                            <input
+                              type="checkbox"
+                              className="h-4 w-4 shrink-0 rounded border-input"
+                              checked={selectedJids.has(g.id)}
+                              onChange={() => toggleJid(g.id)}
+                            />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium truncate">{g.name}</p>
+                              <p className="text-xs text-muted-foreground font-mono truncate">{g.id}</p>
+                            </div>
+                            <Badge variant="secondary" className="shrink-0 text-xs gap-1">
+                              <Users className="h-3 w-3" />
+                              {g.participantCount}
+                            </Badge>
+                          </label>
+                        ))
+                      )}
+                    </div>
+
+                    {/* Announce-only info */}
+                    {!loadingGroups && liveGroups.some((g) => g.announce) && (
+                      <p className="text-xs text-muted-foreground">
+                        {liveGroups.filter((g) => g.announce).length} admin-only group
+                        {liveGroups.filter((g) => g.announce).length !== 1 ? "s" : ""} hidden
+                        (your account cannot send messages there).
+                      </p>
+                    )}
+
+                    <Button
+                      size="sm"
+                      disabled={selectedJids.size === 0 || adding}
+                      onClick={handleAddSelected}
+                    >
+                      {adding && <Loader2 className="h-4 w-4 animate-spin" />}
+                      Add {selectedJids.size > 0 ? `${selectedJids.size} group${selectedJids.size !== 1 ? "s" : ""}` : "selected"}
+                    </Button>
+                  </>
+                )}
               </CardContent>
             </Card>
 
@@ -268,21 +369,21 @@ export function GroupLists() {
               <CardHeader><CardTitle className="text-sm">Groups in this list</CardTitle></CardHeader>
               <CardContent className="p-0">
                 {detail.members.length === 0 ? (
-                  <p className="px-4 py-3 text-sm text-muted-foreground">No groups yet. Add JIDs above.</p>
+                  <p className="px-4 py-3 text-sm text-muted-foreground">No groups yet. Pick from an instance above.</p>
                 ) : (
                   <div className="divide-y max-h-[480px] overflow-y-auto">
                     {detail.members.map((m) => (
                       <div key={m.id} className="flex items-center justify-between px-4 py-2.5">
-                        <div>
-                          <span className="font-mono text-xs">{m.group_jid}</span>
+                        <div className="min-w-0">
                           {m.label && (
-                            <span className="ml-2 text-xs text-muted-foreground">{m.label}</span>
+                            <p className="text-sm font-medium truncate">{m.label}</p>
                           )}
+                          <span className="font-mono text-xs text-muted-foreground truncate">{m.group_jid}</span>
                         </div>
                         <Button
                           size="icon"
                           variant="ghost"
-                          className="h-7 w-7 text-destructive hover:text-destructive"
+                          className="h-7 w-7 shrink-0 text-destructive hover:text-destructive"
                           onClick={() => handleRemoveMember(m.id)}
                         >
                           <X className="h-3.5 w-3.5" />
