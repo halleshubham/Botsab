@@ -30,6 +30,8 @@ export const login = (email: string, password: string) =>
 export const getMe = () =>
   api.get<{ userId: string; email: string; role: string; instanceLimit: number; status: string; plan: string }>("/auth/me");
 
+export const logout = () => api.post("/auth/logout");
+
 // Keys
 export type ApiKey = { id: string; label: string; lastUsedAt: string | null; createdAt: string };
 export const listKeys = () => api.get<ApiKey[]>("/keys");

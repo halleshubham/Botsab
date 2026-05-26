@@ -3,6 +3,7 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { LayoutDashboard, Smartphone, Key, Webhook, LogOut, BookOpen, Users, ShieldCheck, Phone, List, Megaphone, Bot } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { logout } from "@/lib/api";
 
 const BASE_LINKS = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -35,10 +36,15 @@ export function Sidebar() {
   const links = isSuperadmin ? [...BASE_LINKS, ADMIN_LINK] : BASE_LINKS;
 
   function handleLogout() {
-    localStorage.removeItem("apiKey");
-    localStorage.removeItem("userId");
-    localStorage.removeItem("role");
-    navigate("/login");
+    logout().catch(() => {}).finally(() => {
+      localStorage.removeItem("apiKey");
+      localStorage.removeItem("userId");
+      localStorage.removeItem("role");
+      localStorage.removeItem("status");
+      localStorage.removeItem("plan");
+      localStorage.removeItem("email");
+      navigate("/login");
+    });
   }
 
   return (

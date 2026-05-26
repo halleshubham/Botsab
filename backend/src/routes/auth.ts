@@ -36,6 +36,11 @@ router.post("/login", async (req: Request, res: Response) => {
   }
 });
 
+router.post("/logout", requireApiKey, async (req: Request, res: Response) => {
+  await db("api_keys").where({ id: req.keyId }).update({ revoked: true });
+  res.json({ ok: true });
+});
+
 router.get("/me", requireApiKey, async (req: Request, res: Response) => {
   const user = await db("users")
     .where({ id: req.userId })

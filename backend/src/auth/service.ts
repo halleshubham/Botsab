@@ -85,6 +85,12 @@ export async function loginUser(email: string, password: string) {
   const valid = await bcrypt.compare(password, user.password_hash);
   if (!valid) throw new Error("Invalid credentials");
 
+  // Revoke any previously issued login keys so they can't be reused after sign-out
+  await db("api_keys")
+    .where({ user_id: user.id, revoked: false })
+    .whereLike("label", "login-%")
+    .update({ revoked: true });
+
   const apiKey = await createApiKey(user.id, `login-${new Date().toISOString().slice(0, 10)}`);
   return { userId: user.id, role: user.role as string, apiKey: apiKey.key };
 }

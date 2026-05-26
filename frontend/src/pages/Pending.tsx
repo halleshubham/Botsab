@@ -2,6 +2,7 @@ import { Clock, LogOut, CheckCircle2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { logout } from "@/lib/api";
 
 const PLAN_LABELS: Record<string, string> = {
   starter: "Starter — 1 instance · ₹199/mo",
@@ -20,13 +21,15 @@ export function Pending() {
   const email = localStorage.getItem("email") ?? "";
 
   function handleLogout() {
-    localStorage.removeItem("apiKey");
-    localStorage.removeItem("userId");
-    localStorage.removeItem("role");
-    localStorage.removeItem("status");
-    localStorage.removeItem("plan");
-    localStorage.removeItem("email");
-    window.location.href = "/";
+    logout().catch(() => {}).finally(() => {
+      localStorage.removeItem("apiKey");
+      localStorage.removeItem("userId");
+      localStorage.removeItem("role");
+      localStorage.removeItem("status");
+      localStorage.removeItem("plan");
+      localStorage.removeItem("email");
+      window.location.href = "/";
+    });
   }
 
   return (
