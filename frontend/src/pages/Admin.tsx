@@ -115,6 +115,9 @@ export function Admin() {
                 <div key={user.id} className="flex items-center justify-between px-6 py-4 gap-4">
                   <div className="min-w-0 flex-1">
                     <p className="font-medium text-sm truncate">{user.email}</p>
+                    {user.phone && (
+                      <p className="text-xs text-muted-foreground">{user.phone}</p>
+                    )}
                     <div className="flex items-center gap-2 mt-1">
                       <Badge
                         variant="outline"
@@ -172,6 +175,7 @@ export function Admin() {
             <thead className="bg-muted/50">
               <tr>
                 <th className="text-left px-4 py-3 font-medium">Email</th>
+                <th className="text-left px-4 py-3 font-medium">Phone</th>
                 <th className="text-left px-4 py-3 font-medium">Role</th>
                 <th className="text-left px-4 py-3 font-medium">Plan</th>
                 <th className="text-center px-4 py-3 font-medium">Used</th>
@@ -190,6 +194,9 @@ export function Admin() {
                     <td className="px-4 py-3 font-medium">
                       {user.email}
                       {isSelf && <span className="ml-2 text-xs text-muted-foreground">(you)</span>}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-muted-foreground">
+                      {user.phone ?? <span className="text-xs">—</span>}
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">

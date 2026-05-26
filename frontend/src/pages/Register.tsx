@@ -38,6 +38,7 @@ export function Register() {
   const defaultPlan = (searchParams.get("plan") ?? "pro") as string;
 
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [plan, setPlan] = useState(defaultPlan);
   const [loading, setLoading] = useState(false);
@@ -46,7 +47,7 @@ export function Register() {
     e.preventDefault();
     setLoading(true);
     try {
-      const { data } = await register(email, password, plan);
+      const { data } = await register(email, password, plan, phone || undefined);
       localStorage.setItem("userId", data.userId);
       localStorage.setItem("apiKey", data.apiKey);
       localStorage.setItem("role", data.role);
@@ -138,6 +139,19 @@ export function Register() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="phone">
+                  Mobile number
+                  <span className="ml-1 text-xs text-muted-foreground font-normal">(for quick support)</span>
+                </Label>
+                <Input
+                  id="phone"
+                  type="tel"
+                  placeholder="+91 98765 43210"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
                 />
               </div>
               <div className="space-y-2">

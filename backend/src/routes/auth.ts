@@ -13,12 +13,13 @@ const credentialsSchema = z.object({
 
 const registerSchema = credentialsSchema.extend({
   plan: z.enum(["starter", "pro", "business"]).default("starter"),
+  phone: z.string().min(7).max(20).optional(),
 });
 
 router.post("/register", async (req: Request, res: Response) => {
-  const { email, password, plan } = registerSchema.parse(req.body);
+  const { email, password, plan, phone } = registerSchema.parse(req.body);
   try {
-    const result = await registerUser(email, password, plan);
+    const result = await registerUser(email, password, plan, phone);
     res.status(201).json(result);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Registration failed";
@@ -44,12 +45,13 @@ router.post("/logout", requireApiKey, async (req: Request, res: Response) => {
 router.get("/me", requireApiKey, async (req: Request, res: Response) => {
   const user = await db("users")
     .where({ id: req.userId })
-    .select("id", "email", "role", "instance_limit", "status", "plan")
+    .select("id", "email", "role", "instance_limit", "status", "plan", "phone")
     .first();
   if (!user) return res.status(404).json({ error: "User not found" });
   res.json({
     userId: user.id,
     email: user.email,
+    phone: user.phone ?? null,
     role: user.role,
     instanceLimit: Number(user.instance_limit),
     status: user.status ?? "active",

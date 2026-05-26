@@ -11,7 +11,7 @@ router.use(requireSuperadmin);
 
 router.get("/users", async (_req: Request, res: Response) => {
   const users = await db("users")
-    .select("id", "email", "role", "instance_limit", "status", "plan", "created_at")
+    .select("id", "email", "phone", "role", "instance_limit", "status", "plan", "created_at")
     .orderBy("created_at", "asc");
 
   const counts = await db("instances")
@@ -25,6 +25,7 @@ router.get("/users", async (_req: Request, res: Response) => {
     users.map((u) => ({
       id: u.id,
       email: u.email,
+      phone: u.phone ?? null,
       role: u.role,
       instanceLimit: Number(u.instance_limit),
       instanceCount: countMap[u.id] ?? 0,

@@ -21,14 +21,14 @@ api.interceptors.response.use(
 );
 
 // Auth
-export const register = (email: string, password: string, plan = "starter") =>
-  api.post<{ userId: string; apiKey: string; role: string; status: string }>("/auth/register", { email, password, plan });
+export const register = (email: string, password: string, plan = "starter", phone?: string) =>
+  api.post<{ userId: string; apiKey: string; role: string; status: string }>("/auth/register", { email, password, plan, phone });
 
 export const login = (email: string, password: string) =>
   api.post<{ userId: string; role: string; apiKey: string }>("/auth/login", { email, password });
 
 export const getMe = () =>
-  api.get<{ userId: string; email: string; role: string; instanceLimit: number; status: string; plan: string }>("/auth/me");
+  api.get<{ userId: string; email: string; phone: string | null; role: string; instanceLimit: number; status: string; plan: string }>("/auth/me");
 
 export const logout = () => api.post("/auth/logout");
 
@@ -74,6 +74,7 @@ export const sendMessage = (id: string, to: string, text: string) =>
 export type AdminUser = {
   id: string;
   email: string;
+  phone: string | null;
   role: string;
   instanceLimit: number;
   instanceCount: number;

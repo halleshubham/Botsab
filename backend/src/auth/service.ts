@@ -43,7 +43,7 @@ const PLAN_LIMITS: Record<string, number> = {
   business: 10,
 };
 
-export async function registerUser(email: string, password: string, plan = "starter") {
+export async function registerUser(email: string, password: string, plan = "starter", phone?: string) {
   const existing = await db("users").where({ email }).first();
   if (existing) throw new Error("Email already registered");
 
@@ -60,6 +60,7 @@ export async function registerUser(email: string, password: string, plan = "star
       id: crypto.randomUUID(),
       email,
       password_hash,
+      phone: phone ?? null,
       role: isSuperadmin ? "superadmin" : "user",
       // Superadmin is active immediately; regular users wait for approval
       status: isSuperadmin ? "active" : "pending",
