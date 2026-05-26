@@ -15,7 +15,9 @@ const messagePayloadSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("text"), text: z.string().min(1).max(4096) }),
   z.object({
     type: z.literal("image"),
-    url: z.string().url(),
+    url: z.string().url().optional(),
+    fileId: z.string().optional(),
+    mimeType: z.string().optional(),
     caption: z.string().max(1024).optional(),
   }),
   z.object({
@@ -90,14 +92,23 @@ router.get("/:campaignId", async (req: Request, res: Response) => {
 });
 
 router.post("/", async (req: Request, res: Response) => {
-  const body = z
-    .object({
-      list_type: z.enum(["contact", "group"]),
-      list_id: z.string().uuid(),
-      message: messagePayloadSchema,
-      options: optionsSchema,
-    })
-    .parse(req.body);
+  let body: z.infer<ReturnType<typeof z.object>>;
+  try {
+    body = z
+      .object({
+        list_type: z.enum(["contact", "group"]),
+        list_id: z.string().uuid(),
+        message: messagePayloadSchema,
+        options: optionsSchema,
+      })
+      .parse(req.body);
+  } catch (err) {
+    return res.status(400).json({ error: err instanceof z.ZodError ? err.errors : "Invalid request body" });
+  }
+
+  if (body.message.type === "image" && !body.message.url && !body.message.fileId) {
+    return res.status(400).json({ error: "Image campaign requires either url or fileId" });
+  }
 
   const listTable = body.list_type === "contact" ? "contact_lists" : "group_lists";
   const list = await db(listTable).where({ id: body.list_id, user_id: req.userId }).first();
