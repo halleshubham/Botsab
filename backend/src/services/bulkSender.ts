@@ -259,7 +259,15 @@ export async function runCampaign(campaignId: string): Promise<void> {
 
     if (opts.markReadBeforeSend) {
       try {
-        await currentMeta.socket.chatModify({ markRead: true, lastMessages: [] }, target);
+        // Provide a timestamp cursor so WhatsApp knows up to which message to mark read.
+        // Without lastMessages the newerTimestampId is undefined and the action is ignored.
+        await currentMeta.socket.chatModify({
+          markRead: true,
+          lastMessages: [{
+            key: { remoteJid: target, id: crypto.randomUUID().replace(/-/g, "").toUpperCase().slice(0, 20), fromMe: false },
+            messageTimestamp: Math.floor(Date.now() / 1000),
+          }],
+        }, target);
       } catch {}
     }
 
