@@ -5,6 +5,8 @@ import { Landing } from "@/pages/Landing";
 import { Login } from "@/pages/Login";
 import { Register } from "@/pages/Register";
 import { Pending } from "@/pages/Pending";
+import { Privacy } from "@/pages/Privacy";
+import { Terms } from "@/pages/Terms";
 import { Dashboard } from "@/pages/Dashboard";
 import { Instances } from "@/pages/Instances";
 import { ApiKeys } from "@/pages/ApiKeys";
@@ -29,6 +31,8 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/pending" element={<Pending />} />
+          <Route path="/privacy" element={<Privacy />} />
+          <Route path="/terms" element={<Terms />} />
 
           {/* App (auth required) */}
           <Route element={<AppLayout />}>
