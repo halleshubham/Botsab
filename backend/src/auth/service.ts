@@ -2,6 +2,7 @@ import crypto from "crypto";
 import bcrypt from "bcrypt";
 import { db } from "../db";
 import { config } from "../config";
+import { sendRegistrationPending } from "../services/mailer";
 
 export function generateApiKey(): string {
   return `wapi_${crypto.randomBytes(32).toString("hex")}`;
@@ -68,6 +69,12 @@ export async function registerUser(email: string, password: string, plan = "star
     .returning(["id", "email", "role", "status", "plan", "created_at"]);
 
   const apiKey = await createApiKey(user.id, "default");
+
+  // Fire-and-forget — don't let a mail failure block registration
+  if (!isSuperadmin) {
+    sendRegistrationPending(email, validPlan).catch(() => {});
+  }
+
   return { userId: user.id, apiKey: apiKey.key, role: user.role, status: user.status };
 }
 

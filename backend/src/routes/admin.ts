@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { requireApiKey, requireSuperadmin } from "../auth/middleware";
 import { db } from "../db";
+import { sendAccountApproved } from "../services/mailer";
 
 const router = Router();
 
@@ -56,6 +57,9 @@ router.post("/users/:userId/approve", async (req: Request, res: Response) => {
     .where({ id: req.params.userId })
     .update(update)
     .returning(["id", "email", "role", "instance_limit", "status", "plan"]);
+
+  // Fire-and-forget approval email
+  sendAccountApproved(updated.email, updated.plan, Number(updated.instance_limit)).catch(() => {});
 
   res.json({
     id: updated.id,
