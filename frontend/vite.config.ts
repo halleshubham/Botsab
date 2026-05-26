@@ -17,6 +17,8 @@ export default defineConfig({
       "/instances": "http://localhost:3000",
       "/contact-lists": "http://localhost:3000",
       "/group-lists": "http://localhost:3000",
+      "/media": "http://localhost:3000",
+      "/uploads": "http://localhost:3000",
       "/admin": {
         target: "http://localhost:3000",
         bypass(req) {

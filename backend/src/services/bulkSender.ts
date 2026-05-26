@@ -1,7 +1,10 @@
 
+import fs from "fs";
+import path from "path";
 import { db } from "../db";
 import { sessionManager } from "../sessions/manager";
 import { logger } from "../utils/logger";
+import { config } from "../config";
 
 export interface BulkOptions {
   minDelayMs: number;
@@ -274,12 +277,17 @@ export async function runCampaign(campaignId: string): Promise<void> {
       case "text":
         content = { text: applySuffix(pickText(payload), opts) };
         break;
-      case "image":
+      case "image": {
+        const imageSource = payload.fileId
+          ? { image: fs.readFileSync(path.resolve(config.uploadsDir, payload.fileId as string)) }
+          : { image: { url: payload.url as string } };
         content = {
-          image: { url: payload.url },
+          ...imageSource,
           caption: payload.caption ? applySuffix(payload.caption as string, opts) : undefined,
+          mimetype: payload.mimeType as string | undefined,
         };
         break;
+      }
       case "document":
         content = { document: { url: payload.url }, fileName: payload.filename, mimetype: payload.mimetype };
         break;

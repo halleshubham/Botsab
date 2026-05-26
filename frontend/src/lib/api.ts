@@ -88,6 +88,15 @@ export const updateAdminUser = (userId: string, data: { instanceLimit?: number; 
 export const approvePendingUser = (userId: string) =>
   api.post<{ id: string; email: string; instanceLimit: number; status: string; plan: string }>(`/admin/users/${userId}/approve`);
 
+// Media upload
+export const uploadMedia = (file: File) => {
+  const form = new FormData();
+  form.append("file", file);
+  return api.post<{ fileId: string; mimeType: string }>("/media/upload", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+};
+
 // Groups
 export type Group = {
   id: string;

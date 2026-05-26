@@ -1,6 +1,8 @@
 import express from "express";
 import rateLimit from "express-rate-limit";
 import fs from "fs/promises";
+import fsSync from "fs";
+import path from "path";
 import { config } from "./config";
 import { db } from "./db";
 import { sessionManager } from "./sessions/manager";
@@ -19,8 +21,12 @@ import contactListsRouter from "./routes/contactLists";
 import groupListsRouter from "./routes/groupLists";
 import campaignsRouter from "./routes/campaigns";
 import phoneContactsRouter from "./routes/phoneContacts";
+import mediaRouter from "./routes/media";
 
 const app = express();
+
+// Ensure uploads directory exists
+fsSync.mkdirSync(config.uploadsDir, { recursive: true });
 
 app.use(express.json({ limit: "10mb" }));
 
@@ -50,6 +56,8 @@ app.use("/instances/:instanceId/phone-contacts", phoneContactsRouter);
 app.use("/contact-lists", contactListsRouter);
 app.use("/group-lists", groupListsRouter);
 app.use("/admin", adminRouter);
+app.use("/media", mediaRouter);
+app.use("/uploads", express.static(path.resolve(config.uploadsDir)));
 
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
 

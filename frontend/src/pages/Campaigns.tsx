@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Send, ChevronDown, ChevronUp, RefreshCw, XCircle, CheckCircle, AlertCircle, Clock, Loader2 } from "lucide-react";
+import { Send, ChevronDown, ChevronUp, RefreshCw, XCircle, CheckCircle, AlertCircle, Clock, Loader2, ImageIcon, Type, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,6 +14,7 @@ import {
   getCampaign,
   createCampaign,
   cancelCampaign,
+  uploadMedia,
   type Campaign,
   type BulkCampaignOptions,
 } from "@/lib/api";
@@ -63,13 +64,18 @@ export function Campaigns() {
   const [instanceId, setInstanceId] = useState("");
   const [listType, setListType] = useState<"contact" | "group">("contact");
   const [listId, setListId] = useState("");
+  const [msgType, setMsgType] = useState<"text" | "image">("text");
   const [msgText, setMsgText] = useState("");
   const [msgVariants, setMsgVariants] = useState("");
   const [showVariants, setShowVariants] = useState(false);
+  const [imgFile, setImgFile] = useState<File | null>(null);
+  const [imgPreview, setImgPreview] = useState<string | null>(null);
+  const [imgCaption, setImgCaption] = useState("");
   const [showOpts, setShowOpts] = useState(false);
   const [opts, setOpts] = useState<BulkCampaignOptions>({ ...DEFAULT_OPTS });
   const [creating, setCreating] = useState(false);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: instances = [] } = useQuery({
     queryKey: ["instances"],
@@ -118,22 +124,55 @@ export function Campaigns() {
     setOpts((prev) => ({ ...prev, [key]: value }));
   }
 
+  function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null;
+    setImgFile(file);
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setImgPreview(url);
+    } else {
+      setImgPreview(null);
+    }
+  }
+
+  function clearImage() {
+    setImgFile(null);
+    setImgPreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    if (!instanceId || !listId || !msgText.trim()) return;
+    if (!instanceId || !listId) return;
+    if (msgType === "text" && !msgText.trim()) return;
+    if (msgType === "image" && !imgFile) return;
     setCreating(true);
     try {
-      const variants = showVariants
-        ? [msgText.trim(), ...msgVariants.split("\n").map((s) => s.trim()).filter(Boolean)]
-        : undefined;
+      let message: Record<string, unknown>;
+      if (msgType === "image") {
+        const { data: uploaded } = await uploadMedia(imgFile!);
+        message = {
+          type: "image",
+          fileId: uploaded.fileId,
+          mimeType: uploaded.mimeType,
+          caption: imgCaption.trim() || undefined,
+        };
+      } else {
+        const variants = showVariants
+          ? [msgText.trim(), ...msgVariants.split("\n").map((s) => s.trim()).filter(Boolean)]
+          : undefined;
+        message = { type: "text", text: msgText.trim(), ...(variants ? { variants } : {}) };
+      }
       const { data } = await createCampaign(instanceId, {
         list_type: listType,
         list_id: listId,
-        message: { type: "text", text: msgText.trim(), ...(variants ? { variants } : {}) },
+        message,
         options: opts,
       });
       setMsgText("");
       setMsgVariants("");
+      clearImage();
+      setImgCaption("");
       qc.invalidateQueries({ queryKey: ["campaigns", instanceId] });
       setSelectedCampaignId(data.id);
       toast({ title: "Campaign started", description: `ID: ${data.id.slice(0, 8)}…` });
@@ -210,38 +249,118 @@ export function Campaigns() {
               </div>
             </div>
 
-            {/* Message */}
-            <div className="space-y-1">
-              <Label>Message</Label>
-              <textarea
-                className="w-full h-24 rounded-md border border-input bg-background px-3 py-2 text-sm resize-y focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                placeholder="Type your message…"
-                value={msgText}
-                onChange={(e) => setMsgText(e.target.value)}
-                maxLength={4096}
-              />
-              <p className="text-xs text-muted-foreground text-right">{msgText.length}/4096</p>
+            {/* Message type toggle */}
+            <div className="space-y-2">
+              <Label>Message type</Label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMsgType("text")}
+                  className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm transition-colors ${
+                    msgType === "text" ? "border-primary bg-primary/5 text-primary" : "border-border hover:border-muted-foreground/40"
+                  }`}
+                >
+                  <Type className="h-3.5 w-3.5" /> Text
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMsgType("image")}
+                  className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm transition-colors ${
+                    msgType === "image" ? "border-primary bg-primary/5 text-primary" : "border-border hover:border-muted-foreground/40"
+                  }`}
+                >
+                  <ImageIcon className="h-3.5 w-3.5" /> Image
+                </button>
+              </div>
             </div>
 
-            {/* Message variants */}
-            <div className="space-y-1">
-              <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={showVariants}
-                  onChange={(e) => setShowVariants(e.target.checked)}
-                />
-                <span>Add message variants <span className="text-muted-foreground">(each recipient gets a random version — reduces duplicate-message flags)</span></span>
-              </label>
-              {showVariants && (
-                <textarea
-                  className="w-full h-20 rounded-md border border-input bg-background px-3 py-2 text-sm font-mono resize-y focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  placeholder={"One alternative message per line:\nHey, saw you were interested!\nHi there, quick message for you…"}
-                  value={msgVariants}
-                  onChange={(e) => setMsgVariants(e.target.value)}
-                />
-              )}
-            </div>
+            {msgType === "text" ? (
+              <>
+                {/* Message */}
+                <div className="space-y-1">
+                  <Label>Message</Label>
+                  <textarea
+                    className="w-full h-24 rounded-md border border-input bg-background px-3 py-2 text-sm resize-y focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    placeholder="Type your message…"
+                    value={msgText}
+                    onChange={(e) => setMsgText(e.target.value)}
+                    maxLength={4096}
+                  />
+                  <p className="text-xs text-muted-foreground text-right">{msgText.length}/4096</p>
+                </div>
+
+                {/* Message variants */}
+                <div className="space-y-1">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={showVariants}
+                      onChange={(e) => setShowVariants(e.target.checked)}
+                    />
+                    <span>Add message variants <span className="text-muted-foreground">(each recipient gets a random version — reduces duplicate-message flags)</span></span>
+                  </label>
+                  {showVariants && (
+                    <textarea
+                      className="w-full h-20 rounded-md border border-input bg-background px-3 py-2 text-sm font-mono resize-y focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      placeholder={"One alternative message per line:\nHey, saw you were interested!\nHi there, quick message for you…"}
+                      value={msgVariants}
+                      onChange={(e) => setMsgVariants(e.target.value)}
+                    />
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                {/* Image upload */}
+                <div className="space-y-2">
+                  <Label>Image file <span className="text-xs text-muted-foreground font-normal">(JPEG, PNG, WebP — max 16 MB)</span></Label>
+                  {imgPreview ? (
+                    <div className="relative inline-block">
+                      <img
+                        src={imgPreview}
+                        alt="preview"
+                        className="max-h-48 rounded-md border object-contain"
+                      />
+                      <button
+                        type="button"
+                        onClick={clearImage}
+                        className="absolute -top-2 -right-2 rounded-full bg-destructive p-0.5 text-destructive-foreground shadow"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div
+                      className="flex h-28 cursor-pointer flex-col items-center justify-center rounded-md border-2 border-dashed border-border transition-colors hover:border-primary/60"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <ImageIcon className="h-8 w-8 text-muted-foreground mb-1" />
+                      <p className="text-sm text-muted-foreground">Click to select image</p>
+                    </div>
+                  )}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleImageChange}
+                  />
+                </div>
+
+                {/* Caption */}
+                <div className="space-y-1">
+                  <Label>Caption <span className="text-xs text-muted-foreground font-normal">(optional)</span></Label>
+                  <textarea
+                    className="w-full h-16 rounded-md border border-input bg-background px-3 py-2 text-sm resize-y focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                    placeholder="Add a caption to your image…"
+                    value={imgCaption}
+                    onChange={(e) => setImgCaption(e.target.value)}
+                    maxLength={1024}
+                  />
+                  <p className="text-xs text-muted-foreground text-right">{imgCaption.length}/1024</p>
+                </div>
+              </>
+            )}
 
             {/* Advanced options toggle */}
             <div>
@@ -434,7 +553,11 @@ export function Campaigns() {
 
             <Button
               type="submit"
-              disabled={creating || !instanceId || !listId || !msgText.trim()}
+              disabled={
+                creating || !instanceId || !listId ||
+                (msgType === "text" && !msgText.trim()) ||
+                (msgType === "image" && !imgFile)
+              }
               className="w-full sm:w-auto"
             >
               {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}

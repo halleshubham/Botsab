@@ -42,8 +42,10 @@ services:
       SMTP_USER: ${SMTP_USER:-}
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-}
+      UPLOADS_DIR: /app/uploads
     volumes:
       - sessions_data:/app/sessions
+      - uploads_data:/app/uploads
 
   nginx:
     build:
@@ -58,3 +60,4 @@ services:
 volumes:
   postgres_data:
   sessions_data:
+  uploads_data:

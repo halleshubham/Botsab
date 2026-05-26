@@ -8,6 +8,7 @@ export const config = {
   jwtSecret: process.env.JWT_SECRET!,
   bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS ?? "12"),
   sessionsDir: process.env.SESSIONS_DIR ?? "./sessions",
+  uploadsDir: process.env.UPLOADS_DIR ?? "./uploads",
   rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS ?? "60000"),
   rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS ?? "100"),
   webhookTimeoutMs: parseInt(process.env.WEBHOOK_TIMEOUT_MS ?? "10000"),
