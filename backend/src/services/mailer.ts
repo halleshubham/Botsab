@@ -3,9 +3,9 @@ import { config } from "../config";
 import { logger } from "../utils/logger";
 
 const PLAN_LABELS: Record<string, string> = {
-  starter: "Starter — 3 instances, 500 msgs/day",
-  pro: "Pro — 10 instances, 2,000 msgs/day",
-  business: "Business — Unlimited instances & messages",
+  starter: "Starter — 1 instance · ₹199/mo",
+  pro: "Pro — 3 instances · ₹499/mo",
+  business: "Business — 10 instances · ₹999/mo",
 };
 
 const transporter = config.smtpUser

@@ -38,9 +38,9 @@ export async function revokeApiKey(keyId: string, userId: string) {
 }
 
 const PLAN_LIMITS: Record<string, number> = {
-  starter: 3,
-  pro: 10,
-  business: -1,
+  starter: 1,
+  pro: 3,
+  business: 10,
 };
 
 export async function registerUser(email: string, password: string, plan = "starter") {

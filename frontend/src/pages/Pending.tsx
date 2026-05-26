@@ -4,9 +4,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
 const PLAN_LABELS: Record<string, string> = {
-  starter: "Starter — 3 instances",
-  pro: "Pro — 10 instances",
-  business: "Business — Unlimited",
+  starter: "Starter — 1 instance · ₹199/mo",
+  pro: "Pro — 3 instances · ₹499/mo",
+  business: "Business — 10 instances · ₹999/mo",
 };
 
 const STEPS = [

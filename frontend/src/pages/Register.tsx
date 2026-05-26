@@ -14,21 +14,21 @@ const PLANS = [
   {
     id: "starter",
     name: "Starter",
-    price: "$19/mo",
-    features: ["3 instances", "500 msgs/day"],
+    price: "₹199/mo",
+    features: ["1 instance"],
   },
   {
     id: "pro",
     name: "Pro",
-    price: "$49/mo",
-    features: ["10 instances", "2k msgs/day"],
+    price: "₹499/mo",
+    features: ["3 instances"],
     popular: true,
   },
   {
     id: "business",
     name: "Business",
-    price: "$149/mo",
-    features: ["Unlimited instances", "Unlimited msgs"],
+    price: "₹999/mo",
+    features: ["10 instances"],
   },
 ];
 

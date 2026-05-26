@@ -36,9 +36,9 @@ router.get("/users", async (_req: Request, res: Response) => {
 });
 
 const PLAN_LIMITS: Record<string, number> = {
-  starter: 3,
-  pro: 10,
-  business: -1,
+  starter: 1,
+  pro: 3,
+  business: 10,
 };
 
 router.post("/users/:userId/approve", async (req: Request, res: Response) => {
