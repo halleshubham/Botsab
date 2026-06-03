@@ -15,6 +15,7 @@ export function Groups() {
   const { data: instances = [] } = useQuery({
     queryKey: ["instances"],
     queryFn: () => listInstances().then((r) => r.data),
+    select: (d) => Array.isArray(d) ? d : [],
   });
 
   const connectedInstances = instances.filter((i) => i.status === "connected");
@@ -23,11 +24,13 @@ export function Groups() {
     queryKey: ["groups", selectedInstance],
     queryFn: () => listGroups(selectedInstance).then((r) => r.data),
     enabled: !!selectedInstance,
+    select: (d) => Array.isArray(d) ? d : [],
   });
 
+  const q = search.toLowerCase();
   const filtered = groups.filter((g) =>
-    g.name.toLowerCase().includes(search.toLowerCase()) ||
-    g.id.toLowerCase().includes(search.toLowerCase())
+    (g.name ?? "").toLowerCase().includes(q) ||
+    g.id.toLowerCase().includes(q)
   );
 
   async function copyId(id: string) {
@@ -91,7 +94,7 @@ export function Groups() {
             <Card key={g.id} className="hover:border-primary/50 transition-colors">
               <CardHeader className="pb-2">
                 <div className="flex items-start justify-between gap-2">
-                  <CardTitle className="text-sm leading-snug">{g.name}</CardTitle>
+                  <CardTitle className="text-sm leading-snug">{g.name || <span className="text-muted-foreground italic">Unnamed group</span>}</CardTitle>
                   <Badge variant="secondary" className="shrink-0 gap-1">
                     <Users className="h-3 w-3" />
                     {g.participantCount}
