@@ -211,7 +211,7 @@ export type Campaign = {
   list_id: string;
   message_payload: Record<string, unknown>;
   options: BulkCampaignOptions;
-  status: "pending" | "running" | "completed" | "failed" | "cancelled";
+  status: "pending" | "queued" | "running" | "completed" | "failed" | "cancelled";
   total_count: number;
   sent_count: number;
   failed_count: number;
@@ -219,6 +219,7 @@ export type Campaign = {
   created_at: string;
   started_at: string | null;
   completed_at: string | null;
+  queuePosition: number | null;
 };
 export type CampaignDetail = Campaign & { results: CampaignResult[] };
 

@@ -85,8 +85,22 @@ async function restoreActiveSessions() {
   }
 }
 
+async function cleanupStaleCampaigns() {
+  // Campaigns stuck in "running" were interrupted mid-flight (server crash/restart).
+  // Campaigns stuck in "queued" lost their in-memory queue slot.
+  // Mark both terminal so users can restart them explicitly.
+  const [running, queued] = await Promise.all([
+    db("bulk_campaigns").whereIn("status", ["running"]).update({ status: "failed",    completed_at: new Date() }),
+    db("bulk_campaigns").where({ status: "queued" })  .update({ status: "cancelled", completed_at: new Date() }),
+  ]);
+  if (running || queued) {
+    logger.info({ running, queued }, "Cleaned up stale campaigns from previous run");
+  }
+}
+
 app.listen(config.port, async () => {
   await db.migrate.latest();
+  await cleanupStaleCampaigns();
   await restoreActiveSessions();
   logger.info({ port: config.port }, "Botsab API running");
 });

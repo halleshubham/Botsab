@@ -169,7 +169,74 @@ function incrementDailySent(instanceId: string): void {
 
 const cancelFlags = new Map<string, boolean>();
 
-export function cancelCampaign(campaignId: string): void {
+// ── Instance queue + lock ─────────────────────────────────────────────────────
+// One campaign runs per instance at a time. Additional campaigns wait in a
+// per-instance FIFO queue so they never overlap and flood the WhatsApp socket.
+
+const instanceQueues = new Map<string, string[]>(); // instanceId → [campaignId, ...]
+const instanceLocks  = new Set<string>();            // instanceId → currently running
+
+export function enqueueCampaign(instanceId: string, campaignId: string): void {
+  if (!instanceLocks.has(instanceId)) {
+    instanceLocks.add(instanceId);
+    _runWithLock(instanceId, campaignId);
+  } else {
+    if (!instanceQueues.has(instanceId)) instanceQueues.set(instanceId, []);
+    instanceQueues.get(instanceId)!.push(campaignId);
+    const pos = instanceQueues.get(instanceId)!.length;
+    db("bulk_campaigns").where({ id: campaignId }).update({ status: "queued" }).catch(() => {});
+    logger.info({ instanceId, campaignId, queuePosition: pos }, "Campaign queued — instance busy");
+  }
+}
+
+async function _runWithLock(instanceId: string, campaignId: string): Promise<void> {
+  try {
+    await runCampaign(campaignId);
+  } catch (err) {
+    logger.error({ instanceId, campaignId, err }, "Campaign runner threw");
+    db("bulk_campaigns")
+      .where({ id: campaignId })
+      .update({ status: "failed", completed_at: new Date() })
+      .catch(() => {});
+  } finally {
+    instanceLocks.delete(instanceId);
+    const queue = instanceQueues.get(instanceId);
+    if (queue && queue.length > 0) {
+      const next = queue.shift()!;
+      if (queue.length === 0) instanceQueues.delete(instanceId);
+      instanceLocks.add(instanceId);
+      _runWithLock(instanceId, next);
+    }
+  }
+}
+
+/** Returns queue metadata for a given instance. */
+export function getQueueInfo(instanceId: string): { busy: boolean; queued: string[] } {
+  return {
+    busy: instanceLocks.has(instanceId),
+    queued: [...(instanceQueues.get(instanceId) ?? [])],
+  };
+}
+
+/** Cancel a campaign. If it hasn't started yet, removes it from the queue immediately. */
+export function cancelCampaign(campaignId: string, instanceId?: string): void {
+  if (instanceId) {
+    const queue = instanceQueues.get(instanceId);
+    if (queue) {
+      const idx = queue.indexOf(campaignId);
+      if (idx !== -1) {
+        queue.splice(idx, 1);
+        if (queue.length === 0) instanceQueues.delete(instanceId);
+        db("bulk_campaigns")
+          .where({ id: campaignId })
+          .update({ status: "cancelled", completed_at: new Date() })
+          .catch(() => {});
+        logger.info({ instanceId, campaignId }, "Queued campaign cancelled before running");
+        return;
+      }
+    }
+  }
+  // Running campaign — signal the loop to stop after the current message
   cancelFlags.set(campaignId, true);
 }
 

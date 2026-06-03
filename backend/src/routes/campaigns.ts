@@ -4,8 +4,7 @@ import { z } from "zod";
 import { requireApiKey, requireInstanceOwner } from "../auth/middleware";
 import { db } from "../db";
 import { sessionManager } from "../sessions/manager";
-import { runCampaign, cancelCampaign, DEFAULT_OPTIONS, DEFAULT_GROUP_OPTIONS, MAX_RECIPIENTS_HARD_CAP } from "../services/bulkSender";
-import { logger } from "../utils/logger";
+import { enqueueCampaign, cancelCampaign, getQueueInfo, DEFAULT_OPTIONS, DEFAULT_GROUP_OPTIONS, MAX_RECIPIENTS_HARD_CAP } from "../services/bulkSender";
 
 const router = Router({ mergeParams: true });
 router.use(requireApiKey);
@@ -71,7 +70,13 @@ router.get("/", async (req: Request, res: Response) => {
       "started_at",
       "completed_at"
     );
-  res.json(campaigns);
+
+  const { queued } = getQueueInfo(req.params.instanceId);
+  const result = campaigns.map((c) => ({
+    ...c,
+    queuePosition: c.status === "queued" ? queued.indexOf(c.id) + 1 : null,
+  }));
+  res.json(result);
 });
 
 router.get("/:campaignId", async (req: Request, res: Response) => {
@@ -142,13 +147,7 @@ router.post("/", async (req: Request, res: Response) => {
     skipped_count: 0,
   });
 
-  runCampaign(id).catch((err) => {
-    logger.error({ campaignId: id, err }, "Campaign runner threw");
-    db("bulk_campaigns")
-      .where({ id })
-      .update({ status: "failed", completed_at: new Date() })
-      .catch(() => {});
-  });
+  enqueueCampaign(req.params.instanceId, id);
 
   res.status(201).json({ id, status: "pending" });
 });
@@ -165,7 +164,7 @@ router.post("/:campaignId/cancel", async (req: Request, res: Response) => {
   if (!["pending", "running"].includes(campaign.status)) {
     return res.status(400).json({ error: "Campaign is not active" });
   }
-  cancelCampaign(req.params.campaignId);
+  cancelCampaign(req.params.campaignId, req.params.instanceId);
   res.json({ success: true, message: "Cancel signal sent; campaign will stop after current message" });
 });
 

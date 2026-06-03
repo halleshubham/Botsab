@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Send, ChevronDown, ChevronUp, RefreshCw, XCircle, CheckCircle, AlertCircle, Clock, Loader2, ImageIcon, Type, X } from "lucide-react";
+import { Send, ChevronDown, ChevronUp, RefreshCw, XCircle, CheckCircle, AlertCircle, Clock, Loader2, ImageIcon, Type, X, ListOrdered } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -21,11 +21,12 @@ import {
 import { toast } from "@/hooks/use-toast";
 
 const STATUS_CONFIG = {
-  pending:   { label: "Pending",   variant: "secondary" as const, icon: Clock },
-  running:   { label: "Running",   variant: "default" as const,   icon: Loader2 },
-  completed: { label: "Completed", variant: "default" as const,   icon: CheckCircle },
-  failed:    { label: "Failed",    variant: "destructive" as const, icon: AlertCircle },
-  cancelled: { label: "Cancelled", variant: "secondary" as const,  icon: XCircle },
+  pending:   { label: "Pending",   variant: "secondary" as const,   icon: Clock },
+  queued:    { label: "Queued",    variant: "secondary" as const,   icon: ListOrdered },
+  running:   { label: "Running",   variant: "default" as const,     icon: Loader2 },
+  completed: { label: "Completed", variant: "default" as const,     icon: CheckCircle },
+  failed:    { label: "Failed",    variant: "destructive" as const,  icon: AlertCircle },
+  cancelled: { label: "Cancelled", variant: "secondary" as const,   icon: XCircle },
 } as const;
 
 const DEFAULT_OPTS: BulkCampaignOptions = {
@@ -130,7 +131,7 @@ export function Campaigns() {
     refetchInterval: (query) => {
       const data = query.state.data;
       if (!data) return false;
-      return (data as Campaign[]).some((c) => c.status === "running" || c.status === "pending") ? 3000 : false;
+      return (data as Campaign[]).some((c) => ["pending", "queued", "running"].includes(c.status)) ? 3000 : false;
     },
   });
 
@@ -670,6 +671,7 @@ export function Campaigns() {
                             <Badge variant={cfg.variant} className="gap-1 text-xs shrink-0">
                               <Icon className={`h-3 w-3 ${c.status === "running" ? "animate-spin" : ""}`} />
                               {cfg.label}
+                              {c.status === "queued" && c.queuePosition ? ` #${c.queuePosition}` : ""}
                             </Badge>
                             <span className="text-xs text-muted-foreground">
                               {c.list_type} list · {new Date(c.created_at).toLocaleString()}
@@ -684,7 +686,7 @@ export function Campaigns() {
                             </div>
                           )}
                         </div>
-                        {(c.status === "running" || c.status === "pending") && (
+                        {["pending", "queued", "running"].includes(c.status) && (
                           <Button
                             size="sm"
                             variant="destructive"
