@@ -4,7 +4,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { listInstances } from "@/lib/api";
 
 export function Dashboard() {
-  const { data: instances = [] } = useQuery({ queryKey: ["instances"], queryFn: () => listInstances().then((r) => r.data) });
+  const { data: instances = [] } = useQuery({
+    queryKey: ["instances"],
+    queryFn: () => listInstances().then((r) => r.data),
+    select: (d) => Array.isArray(d) ? d : [],
+  });
 
   const counts = {
     total: instances.length,
