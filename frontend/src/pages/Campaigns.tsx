@@ -47,6 +47,30 @@ const DEFAULT_OPTS: BulkCampaignOptions = {
   respectOptOut: true,
 };
 
+const DEFAULT_GROUP_OPTS: BulkCampaignOptions = {
+  minDelayMs: 180_000,
+  maxDelayMs: 480_000,
+  batchSize: 2,
+  batchPauseMs: 2_700_000,
+  shuffle: true,
+  appendSuffix: false,
+  suffixType: "invisible",
+  suffixLength: 4,
+  sendTypingIndicator: false,
+  markReadBeforeSend: false,
+  maxRecipients: 10,
+  sendStartHour: 9,
+  sendEndHour: 18,
+  dailyLimit: 8,
+  checkNumberExists: false,
+  respectOptOut: true,
+};
+
+function fmtMs(ms: number): string {
+  if (ms >= 60_000) return `${Math.round(ms / 60_000)}m`;
+  return `${Math.round(ms / 1000)}s`;
+}
+
 function ProgressBar({ sent, failed, total }: { sent: number; failed: number; total: number }) {
   if (total === 0) return null;
   const sentPct = Math.round((sent / total) * 100);
@@ -71,6 +95,8 @@ export function Campaigns() {
   const [imgFile, setImgFile] = useState<File | null>(null);
   const [imgPreview, setImgPreview] = useState<string | null>(null);
   const [imgCaption, setImgCaption] = useState("");
+  const [showCaptionVariants, setShowCaptionVariants] = useState(false);
+  const [imgCaptionVariants, setImgCaptionVariants] = useState("");
   const [showOpts, setShowOpts] = useState(false);
   const [opts, setOpts] = useState<BulkCampaignOptions>({ ...DEFAULT_OPTS });
   const [creating, setCreating] = useState(false);
@@ -138,6 +164,8 @@ export function Campaigns() {
   function clearImage() {
     setImgFile(null);
     setImgPreview(null);
+    setImgCaptionVariants("");
+    setShowCaptionVariants(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -151,11 +179,15 @@ export function Campaigns() {
       let message: Record<string, unknown>;
       if (msgType === "image") {
         const { data: uploaded } = await uploadMedia(imgFile!);
+        const captionVariants = showCaptionVariants
+          ? [imgCaption.trim(), ...imgCaptionVariants.split("\n").map((s) => s.trim()).filter(Boolean)].filter(Boolean)
+          : undefined;
         message = {
           type: "image",
           fileId: uploaded.fileId,
           mimeType: uploaded.mimeType,
           caption: imgCaption.trim() || undefined,
+          ...(captionVariants && captionVariants.length > 0 ? { captionVariants } : {}),
         };
       } else {
         const variants = showVariants
@@ -173,6 +205,8 @@ export function Campaigns() {
       setMsgVariants("");
       clearImage();
       setImgCaption("");
+      setImgCaptionVariants("");
+      setShowCaptionVariants(false);
       qc.invalidateQueries({ queryKey: ["campaigns", instanceId] });
       setSelectedCampaignId(data.id);
       toast({ title: "Campaign started", description: `ID: ${data.id.slice(0, 8)}…` });
@@ -228,7 +262,12 @@ export function Campaigns() {
                 <select
                   className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                   value={listType}
-                  onChange={(e) => { setListType(e.target.value as "contact" | "group"); setListId(""); }}
+                  onChange={(e) => {
+                    const t = e.target.value as "contact" | "group";
+                    setListType(t);
+                    setListId("");
+                    setOpts(t === "group" ? { ...DEFAULT_GROUP_OPTS } : { ...DEFAULT_OPTS });
+                  }}
                 >
                   <option value="contact">Contact list</option>
                   <option value="group">Group list</option>
@@ -248,6 +287,17 @@ export function Campaigns() {
                 </select>
               </div>
             </div>
+
+            {/* Group-mode banner */}
+            {listType === "group" && (
+              <div className="rounded-md border border-yellow-200 bg-yellow-50 px-3 py-2 text-xs text-yellow-800 flex items-start gap-2">
+                <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-yellow-600" />
+                <span>
+                  <strong>Group mode:</strong> conservative defaults applied — 3–8 min between sends, batch of 2, max 8 groups/day.
+                  Images are re-encoded per send to avoid hash-based detection.
+                </span>
+              </div>
+            )}
 
             {/* Message type toggle */}
             <div className="space-y-2">
@@ -359,6 +409,26 @@ export function Campaigns() {
                   />
                   <p className="text-xs text-muted-foreground text-right">{imgCaption.length}/1024</p>
                 </div>
+
+                {/* Caption variants */}
+                <div className="space-y-1">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={showCaptionVariants}
+                      onChange={(e) => setShowCaptionVariants(e.target.checked)}
+                    />
+                    <span>Add caption variants <span className="text-muted-foreground">(each send picks a random caption — reduces duplicate-message flags)</span></span>
+                  </label>
+                  {showCaptionVariants && (
+                    <textarea
+                      className="w-full h-20 rounded-md border border-input bg-background px-3 py-2 text-sm font-mono resize-y focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      placeholder={"One alternative caption per line:\nCheck this out!\nDon't miss this deal!"}
+                      value={imgCaptionVariants}
+                      onChange={(e) => setImgCaptionVariants(e.target.value)}
+                    />
+                  )}
+                </div>
               </>
             )}
 
@@ -387,23 +457,23 @@ export function Campaigns() {
                       />
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-xs">Min delay between msgs (ms)</Label>
+                      <Label className="text-xs">Min delay between msgs (ms) — now: {fmtMs(opts.minDelayMs)}</Label>
                       <Input
                         type="number"
                         min={1000}
-                        max={30000}
-                        step={500}
+                        max={900_000}
+                        step={1000}
                         value={opts.minDelayMs}
                         onChange={(e) => setOpt("minDelayMs", Number(e.target.value))}
                       />
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-xs">Max delay between msgs (ms)</Label>
+                      <Label className="text-xs">Max delay between msgs (ms) — now: {fmtMs(opts.maxDelayMs)}</Label>
                       <Input
                         type="number"
                         min={1000}
-                        max={120000}
-                        step={500}
+                        max={1_800_000}
+                        step={1000}
                         value={opts.maxDelayMs}
                         onChange={(e) => setOpt("maxDelayMs", Number(e.target.value))}
                       />
@@ -419,12 +489,12 @@ export function Campaigns() {
                       />
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-xs">Batch pause (ms)</Label>
+                      <Label className="text-xs">Batch pause (ms) — now: {fmtMs(opts.batchPauseMs)}</Label>
                       <Input
                         type="number"
                         min={10000}
-                        max={600000}
-                        step={5000}
+                        max={7_200_000}
+                        step={10000}
                         value={opts.batchPauseMs}
                         onChange={(e) => setOpt("batchPauseMs", Number(e.target.value))}
                       />
@@ -541,11 +611,11 @@ export function Campaigns() {
                   </div>
 
                   <div className="text-xs text-muted-foreground space-y-0.5">
-                    <p>• Each batch of {opts.batchSize} msgs is followed by a ~{Math.round(opts.batchPauseMs / 1000)}s pause</p>
-                    <p>• Messages within a batch are spaced {opts.minDelayMs / 1000}–{opts.maxDelayMs / 1000}s apart (random)</p>
+                    <p>• Each batch of {opts.batchSize} msgs is followed by a ~{fmtMs(opts.batchPauseMs)} pause</p>
+                    <p>• Msgs within a batch are spaced {fmtMs(opts.minDelayMs)}–{fmtMs(opts.maxDelayMs)} apart (random)</p>
                     {opts.shuffle && <p>• Send order is randomised to avoid sequential patterns</p>}
                     {opts.appendSuffix && <p>• A unique {opts.suffixType} suffix makes each message distinct</p>}
-                    <p>• Sends only between {opts.sendStartHour}:00 and {opts.sendEndHour}:00 (server local time); max {opts.dailyLimit}/day per instance</p>
+                    <p>• Sends only between {opts.sendStartHour}:00 and {opts.sendEndHour}:00 (server local time); max {opts.dailyLimit}/day</p>
                   </div>
                 </div>
               )}

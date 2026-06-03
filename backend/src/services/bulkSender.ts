@@ -1,6 +1,7 @@
 
 import fs from "fs";
 import path from "path";
+import sharp from "sharp";
 import { db } from "../db";
 import { sessionManager } from "../sessions/manager";
 import { logger } from "../utils/logger";
@@ -42,6 +43,27 @@ export const DEFAULT_OPTIONS: BulkOptions = {
   sendEndHour: 21,
   dailyLimit: 150,
   checkNumberExists: true,
+  respectOptOut: true,
+};
+
+// Conservative defaults for group campaigns — groups reach many people at once,
+// so WhatsApp's reach-based detection is far more aggressive.
+export const DEFAULT_GROUP_OPTIONS: BulkOptions = {
+  minDelayMs: 180_000,     // 3 min between groups
+  maxDelayMs: 480_000,     // 8 min between groups
+  batchSize: 2,            // 2 groups per batch
+  batchPauseMs: 2_700_000, // 45 min after each batch
+  shuffle: true,
+  appendSuffix: false,
+  suffixType: "invisible",
+  suffixLength: 4,
+  sendTypingIndicator: false, // irrelevant for groups
+  markReadBeforeSend: false,  // irrelevant for groups
+  maxRecipients: 10,          // max 10 groups per run
+  sendStartHour: 9,
+  sendEndHour: 18,
+  dailyLimit: 8,              // max 8 groups per day
+  checkNumberExists: false,   // N/A for groups
   respectOptOut: true,
 };
 
@@ -90,6 +112,29 @@ function pickText(payload: Record<string, unknown>): string {
   return payload.text as string;
 }
 
+// Pick a random caption variant, or fall back to the primary caption
+function pickCaption(payload: Record<string, unknown>): string | undefined {
+  const variants = payload.captionVariants as string[] | undefined;
+  if (Array.isArray(variants) && variants.length > 0) {
+    return variants[Math.floor(Math.random() * variants.length)];
+  }
+  return payload.caption as string | undefined;
+}
+
+// Re-encode image as JPEG with a random quality (82–96) so each send produces
+// a unique file hash — defeats WhatsApp's same-image broadcast detection.
+async function randomizeImageBuffer(input: Buffer): Promise<Buffer> {
+  const quality = 82 + Math.floor(Math.random() * 15);
+  const subsampling = Math.random() < 0.5 ? ("4:2:0" as const) : ("4:4:4" as const);
+  try {
+    return await sharp(input)
+      .jpeg({ quality, chromaSubsampling: subsampling })
+      .toBuffer();
+  } catch {
+    return input; // non-JPEG or unsupported format — send as-is
+  }
+}
+
 // Sleep until the start of the next allowed send window
 async function sleepUntilSendWindow(start: number, end: number, campaignId: string): Promise<void> {
   const now = new Date();
@@ -134,7 +179,8 @@ export async function runCampaign(campaignId: string): Promise<void> {
   const campaign = await db("bulk_campaigns").where({ id: campaignId }).first();
   if (!campaign) return;
 
-  const opts: BulkOptions = { ...DEFAULT_OPTIONS, ...campaign.options };
+  const baseDefaults = campaign.list_type === "group" ? DEFAULT_GROUP_OPTIONS : DEFAULT_OPTIONS;
+  const opts: BulkOptions = { ...baseDefaults, ...campaign.options };
   const payload = campaign.message_payload;
 
   // ── 1. Load raw recipients ──────────────────────────────────────────────
@@ -200,6 +246,21 @@ export async function runCampaign(campaignId: string): Promise<void> {
   // ── 4. Cap and shuffle ────────────────────────────────────────────────
   const capped = recipients.slice(0, Math.min(opts.maxRecipients, MAX_RECIPIENTS_HARD_CAP));
   if (opts.shuffle) shuffle(capped);
+
+  // ── 4b. Pre-load image buffer (once) for randomization per send ───────
+  let baseImageBuffer: Buffer | null = null;
+  if (payload.type === "image") {
+    if (payload.fileId) {
+      try {
+        baseImageBuffer = fs.readFileSync(path.resolve(config.uploadsDir, payload.fileId as string));
+      } catch { /* file missing — will fail per-send */ }
+    } else if (payload.url) {
+      try {
+        const resp = await fetch(payload.url as string);
+        baseImageBuffer = Buffer.from(await resp.arrayBuffer());
+      } catch { /* URL unreachable — fall back to URL reference per-send */ }
+    }
+  }
 
   await db("bulk_campaigns").where({ id: campaignId }).update({
     status: "running",
@@ -286,14 +347,22 @@ export async function runCampaign(campaignId: string): Promise<void> {
         content = { text: applySuffix(pickText(payload), opts) };
         break;
       case "image": {
-        const imageSource = payload.fileId
-          ? { image: fs.readFileSync(path.resolve(config.uploadsDir, payload.fileId as string)) }
-          : { image: { url: payload.url as string } };
-        content = {
-          ...imageSource,
-          caption: payload.caption ? applySuffix(payload.caption as string, opts) : undefined,
-          mimetype: payload.mimeType as string | undefined,
-        };
+        const cap = pickCaption(payload);
+        if (baseImageBuffer) {
+          // Re-encode with random quality → unique hash per send
+          const randomized = await randomizeImageBuffer(baseImageBuffer);
+          content = {
+            image: randomized,
+            caption: cap ? applySuffix(cap, opts) : undefined,
+            mimetype: "image/jpeg",
+          };
+        } else {
+          content = {
+            image: { url: payload.url as string },
+            caption: cap ? applySuffix(cap, opts) : undefined,
+            mimetype: payload.mimeType as string | undefined,
+          };
+        }
         break;
       }
       case "document":

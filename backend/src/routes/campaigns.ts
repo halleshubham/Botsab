@@ -4,7 +4,7 @@ import { z } from "zod";
 import { requireApiKey, requireInstanceOwner } from "../auth/middleware";
 import { db } from "../db";
 import { sessionManager } from "../sessions/manager";
-import { runCampaign, cancelCampaign, DEFAULT_OPTIONS, MAX_RECIPIENTS_HARD_CAP } from "../services/bulkSender";
+import { runCampaign, cancelCampaign, DEFAULT_OPTIONS, DEFAULT_GROUP_OPTIONS, MAX_RECIPIENTS_HARD_CAP } from "../services/bulkSender";
 import { logger } from "../utils/logger";
 
 const router = Router({ mergeParams: true });
@@ -19,6 +19,7 @@ const messagePayloadSchema = z.discriminatedUnion("type", [
     fileId: z.string().optional(),
     mimeType: z.string().optional(),
     caption: z.string().max(1024).optional(),
+    captionVariants: z.array(z.string().max(1024)).max(20).optional(),
   }),
   z.object({
     type: z.literal("document"),
@@ -35,10 +36,10 @@ const messagePayloadSchema = z.discriminatedUnion("type", [
 
 const optionsSchema = z
   .object({
-    minDelayMs: z.number().int().min(1000).max(30000),
-    maxDelayMs: z.number().int().min(1000).max(120000),
+    minDelayMs: z.number().int().min(1000).max(900_000),    // up to 15 min (groups need 3–8 min)
+    maxDelayMs: z.number().int().min(1000).max(1_800_000),  // up to 30 min
     batchSize: z.number().int().min(1).max(50),
-    batchPauseMs: z.number().int().min(10000).max(600000),
+    batchPauseMs: z.number().int().min(10000).max(7_200_000), // up to 2 hours
     shuffle: z.boolean(),
     appendSuffix: z.boolean(),
     suffixType: z.enum(["invisible", "hex"]),
@@ -119,7 +120,8 @@ router.post("/", async (req: Request, res: Response) => {
     return res.status(400).json({ error: "Instance not connected" });
   }
 
-  const options = { ...DEFAULT_OPTIONS, ...body.options };
+  const baseDefaults = body.list_type === "group" ? DEFAULT_GROUP_OPTIONS : DEFAULT_OPTIONS;
+  const options = { ...baseDefaults, ...body.options };
   if (options.maxDelayMs <= options.minDelayMs) {
     return res.status(400).json({ error: "maxDelayMs must be greater than minDelayMs" });
   }
