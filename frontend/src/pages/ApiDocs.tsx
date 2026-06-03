@@ -170,13 +170,13 @@ function buildSections(ctx: CurlCtx): Section[] {
         },
         {
           method: "GET", path: "/instances/:instanceId/groups/:groupId",
-          description: "Get full group metadata including all participants.",
+          description: "Get full group metadata including all participants. Use the numeric group ID — omit the @g.us suffix from the URL.",
           curl: () =>
             `curl ${b}/instances/${id}/groups/${gid} \\\n  ${h}`,
         },
         {
           method: "POST", path: "/instances/:instanceId/groups/:groupId/send",
-          description: "Send a message directly to a group. Use the group ID from GET /groups (with or without @g.us).",
+          description: "Send a message directly to a group. Pass only the numeric group ID in the URL — do NOT include @g.us (it causes a 405 from the proxy). The server appends @g.us automatically.",
           curl: () =>
             `curl -X POST ${b}/instances/${id}/groups/${gid}/send \\\n  ${h} \\\n  ${j} \\\n  -d '{"type":"text","text":"Hello group!"}'`,
         },
@@ -188,7 +188,7 @@ function buildSections(ctx: CurlCtx): Section[] {
         },
         {
           method: "POST", path: "/instances/:instanceId/groups/:groupId/participants",
-          description: "Add, remove, promote, or demote participants. Actions: add | remove | promote | demote.",
+          description: "Add, remove, promote, or demote participants. Actions: add | remove | promote | demote. Use numeric group ID in the URL — omit @g.us.",
           curl: () =>
             `curl -X POST ${b}/instances/${id}/groups/${gid}/participants \\\n  ${h} \\\n  ${j} \\\n  -d '{\n    "action": "add",\n    "participants": ["919876543210@s.whatsapp.net"]\n  }'`,
         },
@@ -230,7 +230,7 @@ export function ApiDocs() {
   });
 
   const [selectedInstance, setSelectedInstance] = useState("");
-  const [groupId, setGroupId] = useState("GROUP_ID");
+  const [groupId, setGroupId] = useState("120363426420430486");
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({ Instances: true, Messages: true, Groups: true });
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -292,11 +292,11 @@ export function ApiDocs() {
           </div>
 
           <div className="space-y-1">
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Group ID</label>
+            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Group ID <span className="normal-case text-[10px] text-yellow-600">(numeric only — no @g.us)</span></label>
             <input
               value={groupId}
               onChange={(e) => setGroupId(e.target.value)}
-              placeholder="120363... (from GET /groups)"
+              placeholder="Numeric ID only — omit @g.us"
               className="w-full rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             />
           </div>

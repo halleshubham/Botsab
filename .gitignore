@@ -17,3 +17,6 @@ backend/dist
 .DS_Store
 *.log
 .claude
+
+# Local scripts (never commit)
+deploy.sh
