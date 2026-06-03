@@ -28,10 +28,10 @@ export interface BulkOptions {
 }
 
 export const DEFAULT_OPTIONS: BulkOptions = {
-  minDelayMs: 4000,
-  maxDelayMs: 10000,
-  batchSize: 15,
-  batchPauseMs: 60000,
+  minDelayMs: 10_000,     // 10s — safe floor for both text and image
+  maxDelayMs: 25_000,     // 25s — image upload + delivery needs headroom
+  batchSize: 10,          // 10 messages per batch (was 15)
+  batchPauseMs: 120_000,  // 2 min between batches (was 1 min)
   shuffle: true,
   appendSuffix: false,
   suffixType: "invisible",
@@ -41,7 +41,7 @@ export const DEFAULT_OPTIONS: BulkOptions = {
   maxRecipients: 50,
   sendStartHour: 8,
   sendEndHour: 21,
-  dailyLimit: 150,
+  dailyLimit: 100,        // 100/day (was 150)
   checkNumberExists: true,
   respectOptOut: true,
 };

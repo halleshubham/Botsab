@@ -30,10 +30,10 @@ const STATUS_CONFIG = {
 } as const;
 
 const DEFAULT_OPTS: BulkCampaignOptions = {
-  minDelayMs: 4000,
-  maxDelayMs: 10000,
-  batchSize: 15,
-  batchPauseMs: 60000,
+  minDelayMs: 10_000,
+  maxDelayMs: 25_000,
+  batchSize: 10,
+  batchPauseMs: 120_000,
   shuffle: true,
   appendSuffix: false,
   suffixType: "invisible",
@@ -43,7 +43,7 @@ const DEFAULT_OPTS: BulkCampaignOptions = {
   maxRecipients: 50,
   sendStartHour: 8,
   sendEndHour: 21,
-  dailyLimit: 150,
+  dailyLimit: 100,
   checkNumberExists: true,
   respectOptOut: true,
 };
