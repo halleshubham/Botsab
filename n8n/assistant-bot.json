@@ -1,0 +1,254 @@
+{
+  "name": "Botsab - Group Assistant Bot (Full)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "botsab-assistant",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "aa000001",
+      "name": "Receive Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "notes": "Register this URL in Botsab: PUT /instances/:id/webhooks  {\"url\":\"http://n8n:5678/webhook/botsab-assistant\",\"events\":[\"message.received\"]}"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "ok",
+        "options": {}
+      },
+      "id": "aa000002",
+      "name": "Ack Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [460, 480],
+      "notes": "Closes the HTTP connection immediately so Botsab's dispatcher doesn't time out. Processing continues in the background."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Parse incoming Botsab webhook ──────────────────────────────────────────\nconst body  = $json.body || {};\nconst event = body.event;\nconst instanceId = body.instanceId || '';\nconst enriched   = body.data?.enriched || {};\n\n// Only handle message.received that are group mentions with text\nif (event !== 'message.received')           return [{ json: { skip: true, reason: 'wrong event' } }];\nif (!enriched.isGroup)                      return [{ json: { skip: true, reason: 'not group' } }];\nif (!enriched.isMentioned)                  return [{ json: { skip: true, reason: 'not mentioned' } }];\nconst rawText = (enriched.text || '').trim();\nif (!rawText)                               return [{ json: { skip: true, reason: 'empty text' } }];\n\n// ── Rate limit: 1 message per group per 3 s ────────────────────────────────\nif (!globalThis._botsabRL) globalThis._botsabRL = {};\nconst now = Date.now();\nconst groupId = enriched.groupId || enriched.remoteJid || '';\nif (now - (globalThis._botsabRL[groupId] || 0) < 3000) {\n  return [{ json: { skip: true, reason: 'rate limited' } }];\n}\nglobalThis._botsabRL[groupId] = now;\n\n// ── Strip @mentions from query ─────────────────────────────────────────────\nconst query = rawText.replace(/@\\d+[\\s]*/g, '').trim();\n\n// ── Detect slash commands (/help, /reset, /about) ─────────────────────────\nconst cmdMatch    = query.match(/^\\/([\\w]+)(?:\\s+(.*))?$/);\nconst isCommand   = !!cmdMatch;\nconst commandName = cmdMatch ? cmdMatch[1].toLowerCase() : null;\nconst commandArg  = cmdMatch ? (cmdMatch[2] || '').trim() : null;\n\nreturn [{ json: {\n  skip: false,\n  instanceId,\n  groupId,\n  senderId:    enriched.senderId || '',\n  rawText,\n  query:       query || rawText,\n  isCommand,\n  commandName,\n  commandArg,\n} }];"
+      },
+      "id": "aa000003",
+      "name": "Parse & Filter",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": false,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "aa000004",
+      "name": "Should Process?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "id": "c2",
+              "leftValue": "={{ $json.isCommand }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "aa000005",
+      "name": "Is Command?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Handle slash commands ─────────────────────────────────────────────────\nconst { instanceId, groupId, commandName } = $json;\n\nif (!globalThis._botsabHistory) globalThis._botsabHistory = {};\nconst key = `${instanceId}:${groupId}`;\n\nlet reply;\nswitch (commandName) {\n  case 'help':\n    reply =\n      '🤖 AI Assistant — Commands\\n' +\n      '• /help   — show this list\\n' +\n      '• /reset  — clear conversation history\\n' +\n      '• /about  — about this bot\\n\\n' +\n      'Or just tag me with any question!';\n    break;\n\n  case 'reset':\n    delete globalThis._botsabHistory[key];\n    reply = '✅ Conversation history cleared. Fresh start!';\n    break;\n\n  case 'about':\n    reply =\n      '🤖 Powered by OpenAI GPT, integrated via Botsab.\\n' +\n      'I remember the last 10 messages in this group. Tag me anytime!';\n    break;\n\n  default:\n    reply = `❓ Unknown command: /${commandName}\\nType /help to see available commands.`;\n}\n\nreturn [{ json: { instanceId, groupId, reply } }];"
+      },
+      "id": "aa000006",
+      "name": "Handle Command",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 140]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://localhost:3000/instances/{{ $json.instanceId }}/groups/{{ $json.groupId }}/send",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "REPLACE_WITH_YOUR_BOTSAB_API_KEY" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={\"type\":\"text\",\"text\":{{ JSON.stringify($json.reply) }}}",
+        "options": {}
+      },
+      "id": "aa000007",
+      "name": "Send Command Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 140]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Build OpenAI API request with conversation history ────────────────────\nconst { instanceId, groupId, senderId, query } = $json;\n\n// ── System prompt — customise this ────────────────────────────────────────\nconst today = new Date().toLocaleDateString('en-IN', {\n  weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',\n});\nconst SYSTEM = `You are a helpful AI assistant embedded in a WhatsApp group via Botsab.\n\nGuidelines:\n- Be concise: reply in under 200 words unless the question genuinely needs more.\n- Plain text only — NO markdown bold (**), NO italic (_), NO headers (##), NO triple backticks.\n- Use bullet points with • if listing things.\n- Friendly, warm tone.\n- If you do not know something, say so honestly.\n- Do not repeat the question back.\n- Today is ${today}.`;\n\n// ── Load per-group history ─────────────────────────────────────────────────\nif (!globalThis._botsabHistory) globalThis._botsabHistory = {};\nconst key = `${instanceId}:${groupId}`;\nif (!globalThis._botsabHistory[key]) globalThis._botsabHistory[key] = [];\n\nconst history  = globalThis._botsabHistory[key];\n// OpenAI: system message is the first entry in messages array\nconst messages = [\n  { role: 'system', content: SYSTEM },\n  ...history.slice(-20),\n  { role: 'user', content: query },\n];\n\n// ── Build the full OpenAI request body ────────────────────────────────────\nconst openaiBody = JSON.stringify({\n  model:      'gpt-4o-mini',\n  max_tokens: 600,\n  messages,\n});\n\nreturn [{ json: { instanceId, groupId, senderId, query, openaiBody } }];"
+      },
+      "id": "aa000008",
+      "name": "Build AI Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 360],
+      "notes": "Change model to 'gpt-4o' for higher quality. Edit SYSTEM prompt to match your group's purpose."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "Bearer REPLACE_WITH_YOUR_OPENAI_KEY" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={{ $json.openaiBody }}",
+        "options": {},
+        "onError": "continueErrorOutput"
+      },
+      "id": "aa000009",
+      "name": "Call OpenAI",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 360],
+      "notes": "On error: falls through to error output (index 1) → Error Fallback node."
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Error fallback when OpenAI API is unreachable ─────────────────────────\nconst ctx = $('Build AI Request').item.json;\nreturn [{ json: {\n  instanceId: ctx.instanceId,\n  groupId:    ctx.groupId,\n  reply:      '⚠️ Sorry, I could not reach the AI service right now. Please try again in a moment.',\n} }];"
+      },
+      "id": "aa000010",
+      "name": "OpenAI Error Fallback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ── Extract reply text + persist to history ───────────────────────────────\nconst aiResp   = $json;\nconst replyText = aiResp.choices?.[0]?.message?.content?.trim()\n  ?? 'Sorry, I could not generate a response. Please try again.';\n\nconst ctx = $('Build AI Request').item.json;\nconst { instanceId, groupId, query } = ctx;\n\n// Persist exchange (store only user/assistant turns, not system)\nif (!globalThis._botsabHistory) globalThis._botsabHistory = {};\nconst key = `${instanceId}:${groupId}`;\nif (!globalThis._botsabHistory[key]) globalThis._botsabHistory[key] = [];\n\nglobalThis._botsabHistory[key].push(\n  { role: 'user',      content: query     },\n  { role: 'assistant', content: replyText },\n);\n\n// Keep last 20 messages (10 exchanges)\nif (globalThis._botsabHistory[key].length > 20) {\n  globalThis._botsabHistory[key] = globalThis._botsabHistory[key].slice(-20);\n}\n\nreturn [{ json: { instanceId, groupId, reply: replyText } }];"
+      },
+      "id": "aa000011",
+      "name": "Save & Format Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 360]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://localhost:3000/instances/{{ $json.instanceId }}/groups/{{ $json.groupId }}/send",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "x-api-key", "value": "REPLACE_WITH_YOUR_BOTSAB_API_KEY" },
+            { "name": "content-type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "raw",
+        "rawContentType": "application/json",
+        "body": "={\"type\":\"text\",\"text\":{{ JSON.stringify($json.reply) }}}",
+        "options": {}
+      },
+      "id": "aa000012",
+      "name": "Send AI Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1780, 400]
+    }
+  ],
+  "connections": {
+    "Receive Webhook": {
+      "main": [
+        [
+          { "node": "Ack Webhook",    "type": "main", "index": 0 },
+          { "node": "Parse & Filter", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Parse & Filter": {
+      "main": [
+        [{ "node": "Should Process?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Should Process?": {
+      "main": [
+        [{ "node": "Is Command?",     "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Is Command?": {
+      "main": [
+        [{ "node": "Handle Command",   "type": "main", "index": 0 }],
+        [{ "node": "Build AI Request", "type": "main", "index": 0 }]
+      ]
+    },
+    "Handle Command": {
+      "main": [
+        [{ "node": "Send Command Reply", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build AI Request": {
+      "main": [
+        [{ "node": "Call OpenAI", "type": "main", "index": 0 }]
+      ]
+    },
+    "Call OpenAI": {
+      "main": [
+        [{ "node": "Save & Format Reply",   "type": "main", "index": 0 }],
+        [{ "node": "OpenAI Error Fallback",  "type": "main", "index": 0 }]
+      ]
+    },
+    "Save & Format Reply": {
+      "main": [
+        [{ "node": "Send AI Reply", "type": "main", "index": 0 }]
+      ]
+    },
+    "OpenAI Error Fallback": {
+      "main": [
+        [{ "node": "Send AI Reply", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "meta": { "templateCredsSetupCompleted": false }
+}

@@ -1,0 +1,23 @@
+# Dependencies
+node_modules
+
+# Build outputs
+dist
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Botsab runtime
+backend/sessions
+backend/dist
+backend/uploads
+
+# Editor / tooling
+.DS_Store
+*.log
+.claude
+
+# Local scripts (never commit)
+deploy.sh
