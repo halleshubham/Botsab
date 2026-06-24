@@ -26,6 +26,7 @@ export function Instances() {
   const { data: instances = [], isLoading } = useQuery({
     queryKey: ["instances"],
     queryFn: () => listInstances().then((r) => r.data),
+    select: (d) => Array.isArray(d) ? d : [],
     refetchInterval: 5000,
   });
 
