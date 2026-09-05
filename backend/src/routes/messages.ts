@@ -18,7 +18,7 @@ const sendSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("image"), to: jidSchema, url: z.string().url().optional(), fileId: z.string().optional(), caption: z.string().optional() }),
   z.object({ type: z.literal("document"), to: jidSchema, url: z.string().url(), filename: z.string(), mimetype: z.string() }),
   z.object({ type: z.literal("audio"), to: jidSchema, url: z.string().url(), ptt: z.boolean().optional() }),
-  z.object({ type: z.literal("video"), to: jidSchema, url: z.string().url(), caption: z.string().optional() }),
+  z.object({ type: z.literal("video"), to: jidSchema, url: z.string().url().optional(), fileId: z.string().optional(), caption: z.string().optional() }),
 ]);
 
 async function sendSingleMessage(instanceId: string, body: z.infer<typeof sendSchema>) {
@@ -27,6 +27,9 @@ async function sendSingleMessage(instanceId: string, body: z.infer<typeof sendSc
 
   if (body.type === "image" && !body.url && !body.fileId) {
     throw new Error("Either url or fileId is required for image");
+  }
+  if (body.type === "video" && !body.url && !body.fileId) {
+    throw new Error("Either url or fileId is required for video");
   }
 
   let content: Record<string, unknown> = {};
@@ -44,7 +47,16 @@ async function sendSingleMessage(instanceId: string, body: z.infer<typeof sendSc
     }
     case "document": content = { document: { url: body.url }, fileName: body.filename, mimetype: body.mimetype }; break;
     case "audio":   content = { audio: { url: body.url }, ptt: body.ptt ?? false }; break;
-    case "video":   content = { video: { url: body.url }, caption: body.caption }; break;
+    case "video": {
+      if (body.fileId) {
+        const filePath = path.resolve(config.uploadsDir, path.basename(body.fileId));
+        if (!fs.existsSync(filePath)) throw new Error("File not found");
+        content = { video: fs.readFileSync(filePath), caption: body.caption };
+      } else {
+        content = { video: { url: body.url! }, caption: body.caption };
+      }
+      break;
+    }
   }
 
   // Mark chat as read before sending

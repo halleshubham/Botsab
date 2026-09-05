@@ -147,6 +147,18 @@ function buildSections(ctx: CurlCtx): Section[] {
             `curl -X POST ${b}/instances/${id}/messages/send \\\n  ${h} \\\n  ${j} \\\n  -d '{\n    "to": "919876543210@s.whatsapp.net",\n    "type": "image",\n    "fileId": "uuid-returned-by-upload.jpg",\n    "caption": "Check this out!"\n  }'`,
         },
         {
+          method: "POST", path: "/instances/:instanceId/messages/send — video (URL)",
+          description: "Send a video from a public URL with an optional caption.",
+          curl: () =>
+            `curl -X POST ${b}/instances/${id}/messages/send \\\n  ${h} \\\n  ${j} \\\n  -d '{\n    "to": "919876543210@s.whatsapp.net",\n    "type": "video",\n    "url": "https://example.com/clip.mp4",\n    "caption": "Check this out!"\n  }'`,
+        },
+        {
+          method: "POST", path: "/instances/:instanceId/messages/send — video (fileId)",
+          description: "Send a video using a fileId returned by POST /media/upload. Avoids re-uploading the same file for each send.",
+          curl: () =>
+            `curl -X POST ${b}/instances/${id}/messages/send \\\n  ${h} \\\n  ${j} \\\n  -d '{\n    "to": "919876543210@s.whatsapp.net",\n    "type": "video",\n    "fileId": "uuid-returned-by-upload.mp4",\n    "caption": "Check this out!"\n  }'`,
+        },
+        {
           method: "POST", path: "/instances/:instanceId/messages/send — document",
           description: "Send a file as a document attachment.",
           curl: () =>
@@ -217,7 +229,7 @@ function buildSections(ctx: CurlCtx): Section[] {
       endpoints: [
         {
           method: "POST", path: "/media/upload",
-          description: "Upload an image file (max 16 MB). Returns a fileId you can pass as \"fileId\" in any send endpoint instead of a public URL.",
+          description: "Upload an image or video file (max 100 MB). Returns a fileId you can pass as \"fileId\" in any send endpoint instead of a public URL.",
           curl: () =>
             `curl -X POST ${b}/media/upload \\\n  ${h} \\\n  -F "file=@/path/to/photo.jpg"`,
         },
