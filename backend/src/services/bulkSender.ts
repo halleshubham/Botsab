@@ -190,7 +190,10 @@ function inSendWindow(start: number, end: number): boolean {
 async function waitForSendWindow(start: number, end: number, campaignId: string): Promise<void> {
   if (inSendWindow(start, end)) return;
   logger.info({ campaignId, start, end, timezone: config.timezone, hour: zonedNow().hour }, "Outside send window, waiting");
+  // Surface the wait in the UI so a paused campaign doesn't look stuck
+  await db("bulk_campaigns").where({ id: campaignId }).update({ status: "waiting" });
   while (!inSendWindow(start, end)) await cancellableSleep(60_000, campaignId);
+  await db("bulk_campaigns").where({ id: campaignId }).update({ status: "running" });
   logger.info({ campaignId }, "Send window open, resuming");
 }
 
@@ -412,7 +415,9 @@ export async function runCampaign(campaignId: string): Promise<void> {
     if (getDailySent(campaign.instance_id) >= opts.dailyLimit) {
       const today = zonedNow().date;
       logger.info({ campaignId, dailyLimit: opts.dailyLimit }, "Daily limit reached, waiting for next day");
+      await db("bulk_campaigns").where({ id: campaignId }).update({ status: "waiting" });
       while (zonedNow().date === today) await cancellableSleep(60_000, campaignId);
+      await db("bulk_campaigns").where({ id: campaignId }).update({ status: "running" });
       await waitForSendWindow(opts.sendStartHour, opts.sendEndHour, campaignId);
     }
 

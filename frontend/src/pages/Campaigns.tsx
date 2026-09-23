@@ -24,6 +24,7 @@ const STATUS_CONFIG = {
   pending:   { label: "Pending",   variant: "secondary" as const,   icon: Clock },
   queued:    { label: "Queued",    variant: "secondary" as const,   icon: ListOrdered },
   running:   { label: "Running",   variant: "default" as const,     icon: Loader2 },
+  waiting:   { label: "Waiting for send hours", variant: "secondary" as const, icon: Clock },
   completed: { label: "Completed", variant: "default" as const,     icon: CheckCircle },
   failed:    { label: "Failed",    variant: "destructive" as const,  icon: AlertCircle },
   cancelled: { label: "Cancelled", variant: "secondary" as const,   icon: XCircle },
@@ -146,7 +147,7 @@ export function Campaigns() {
     refetchInterval: (query) => {
       const data = query.state.data;
       if (!data) return false;
-      return (data as Campaign[]).some((c) => ["pending", "queued", "running"].includes(c.status)) ? 3000 : false;
+      return (data as Campaign[]).some((c) => ["pending", "queued", "running", "waiting"].includes(c.status)) ? 3000 : false;
     },
   });
 
@@ -158,7 +159,7 @@ export function Campaigns() {
       const data = query.state.data;
       if (!data) return false;
       const d = data as { status: string };
-      return d.status === "running" || d.status === "pending" ? 3000 : false;
+      return ["pending", "running", "waiting"].includes(d.status) ? 3000 : false;
     },
   });
 
@@ -709,7 +710,7 @@ export function Campaigns() {
                             </div>
                           )}
                         </div>
-                        {["pending", "queued", "running"].includes(c.status) && (
+                        {["pending", "queued", "running", "waiting"].includes(c.status) && (
                           <Button
                             size="sm"
                             variant="destructive"
