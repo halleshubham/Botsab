@@ -36,6 +36,14 @@ router.get("/", async (req: Request, res: Response) => {
   const meta = getConnectedSession(req.params.instanceId, res);
   if (!meta) return;
   const groups = await meta.socket.groupFetchAllParticipating();
+
+  // Our own IDs in both formats — v7 groups may list participants by LID
+  const userPart = (jid?: string | null) => jid?.split("@")[0].split(":")[0];
+  const me = meta.socket.user;
+  const myIds = new Set([userPart(me?.id), userPart(me?.lid), userPart(me?.phoneNumber)].filter(Boolean));
+  const isMe = (p: GroupMetadata["participants"][number]) =>
+    [p.id, p.lid, p.phoneNumber].some((j) => myIds.has(userPart(j)));
+
   res.json(
     (Object.values(groups) as GroupMetadata[]).map((g) => ({
       id: g.id,
@@ -44,6 +52,7 @@ router.get("/", async (req: Request, res: Response) => {
       participantCount: g.participants.length,
       createdAt: g.creation ? new Date(g.creation * 1000).toISOString() : null,
       announce: g.announce ?? false,
+      isAdmin: g.participants.some((p) => !!p.admin && isMe(p)),
     }))
   );
 });
