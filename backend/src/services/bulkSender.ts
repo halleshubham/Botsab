@@ -47,23 +47,23 @@ export const DEFAULT_OPTIONS: BulkOptions = {
   respectOptOut: true,
 };
 
-// Conservative defaults for group campaigns — groups reach many people at once,
-// so WhatsApp's reach-based detection is far more aggressive.
+// Balanced defaults for group campaigns — groups reach many people at once,
+// so sends stay well spaced, but a full list still goes out within hours.
 export const DEFAULT_GROUP_OPTIONS: BulkOptions = {
-  minDelayMs: 180_000,     // 3 min between groups
-  maxDelayMs: 480_000,     // 8 min between groups
-  batchSize: 2,            // 2 groups per batch
-  batchPauseMs: 2_700_000, // 45 min after each batch
+  minDelayMs: 45_000,      // 45 s between groups
+  maxDelayMs: 120_000,     // 2 min between groups
+  batchSize: 5,            // 5 groups per batch
+  batchPauseMs: 600_000,   // 10 min after each batch
   shuffle: true,
   appendSuffix: false,
   suffixType: "invisible",
   suffixLength: 4,
   sendTypingIndicator: true,  // groups show "typing" to members — simulates active user
   markReadBeforeSend: true,   // mark group as read before posting — simulates active user
-  maxRecipients: 10,          // max 10 groups per run
-  sendStartHour: 9,
-  sendEndHour: 18,
-  dailyLimit: 8,              // max 8 groups per day
+  maxRecipients: 100,         // a full group list per run
+  sendStartHour: 8,
+  sendEndHour: 21,
+  dailyLimit: 50,             // max 50 groups per day
   checkNumberExists: false,   // N/A for groups
   respectOptOut: true,
 };
@@ -190,7 +190,10 @@ function inSendWindow(start: number, end: number): boolean {
 async function waitForSendWindow(start: number, end: number, campaignId: string): Promise<void> {
   if (inSendWindow(start, end)) return;
   logger.info({ campaignId, start, end, timezone: config.timezone, hour: zonedNow().hour }, "Outside send window, waiting");
+  // Surface the wait in the UI so a paused campaign doesn't look stuck
+  await db("bulk_campaigns").where({ id: campaignId }).update({ status: "waiting" });
   while (!inSendWindow(start, end)) await cancellableSleep(60_000, campaignId);
+  await db("bulk_campaigns").where({ id: campaignId }).update({ status: "running" });
   logger.info({ campaignId }, "Send window open, resuming");
 }
 
@@ -412,7 +415,9 @@ export async function runCampaign(campaignId: string): Promise<void> {
     if (getDailySent(campaign.instance_id) >= opts.dailyLimit) {
       const today = zonedNow().date;
       logger.info({ campaignId, dailyLimit: opts.dailyLimit }, "Daily limit reached, waiting for next day");
+      await db("bulk_campaigns").where({ id: campaignId }).update({ status: "waiting" });
       while (zonedNow().date === today) await cancellableSleep(60_000, campaignId);
+      await db("bulk_campaigns").where({ id: campaignId }).update({ status: "running" });
       await waitForSendWindow(opts.sendStartHour, opts.sendEndHour, campaignId);
     }
 

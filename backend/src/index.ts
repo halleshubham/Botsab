@@ -119,7 +119,7 @@ async function cleanupStaleCampaigns() {
   // Campaigns stuck in "queued" lost their in-memory queue slot.
   // Mark both terminal so users can restart them explicitly.
   const [running, queued] = await Promise.all([
-    db("bulk_campaigns").whereIn("status", ["running"]).update({ status: "failed",    completed_at: new Date() }),
+    db("bulk_campaigns").whereIn("status", ["running", "waiting"]).update({ status: "failed",    completed_at: new Date() }),
     db("bulk_campaigns").where({ status: "queued" })  .update({ status: "cancelled", completed_at: new Date() }),
   ]);
   if (running || queued) {
