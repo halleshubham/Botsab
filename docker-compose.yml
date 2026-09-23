@@ -43,6 +43,7 @@ services:
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-}
       UPLOADS_DIR: /app/uploads
+      TIMEZONE: ${TIMEZONE:-Asia/Kolkata}
     volumes:
       - sessions_data:/app/sessions
       - uploads_data:/app/uploads

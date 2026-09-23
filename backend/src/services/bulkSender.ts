@@ -81,6 +81,34 @@ function randomDelay(min: number, max: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+class CampaignCancelledError extends Error {}
+
+// Sleep in short slices so a cancel request takes effect within seconds, even
+// during multi-minute batch pauses or overnight send-window waits.
+async function cancellableSleep(ms: number, campaignId: string): Promise<void> {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    if (cancelFlags.get(campaignId)) throw new CampaignCancelledError();
+    await new Promise((r) => setTimeout(r, Math.min(5_000, end - Date.now())));
+  }
+  if (cancelFlags.get(campaignId)) throw new CampaignCancelledError();
+}
+
+function randomCancellableDelay(min: number, max: number, campaignId: string): Promise<void> {
+  return cancellableSleep(Math.floor(Math.random() * (max - min + 1)) + min, campaignId);
+}
+
+// Reject if a socket call hangs — one stuck call must not freeze the whole campaign.
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: NodeJS.Timeout;
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
 function shuffle<T>(arr: T[]): T[] {
   for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
@@ -136,25 +164,41 @@ async function randomizeImageBuffer(input: Buffer): Promise<Buffer> {
   }
 }
 
-// Sleep until the start of the next allowed send window
-async function sleepUntilSendWindow(start: number, end: number, campaignId: string): Promise<void> {
-  const now = new Date();
-  const h = now.getHours();
-  if (h >= start && h < end) return;
+// Hour and date in the configured timezone (TIMEZONE env), not the container's
+// clock — containers run in UTC, which shifted the send window by hours.
+function zonedNow(): { hour: number; date: string } {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: config.timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(new Date());
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
+  return { hour: parseInt(get("hour"), 10), date: `${get("year")}-${get("month")}-${get("day")}` };
+}
 
-  const next = new Date(now);
-  if (h >= end) next.setDate(next.getDate() + 1);
-  next.setHours(start, 0, 30, 0); // 30 s into the hour avoids edge-case re-entry
-  const waitMs = next.getTime() - now.getTime();
-  logger.info({ campaignId, until: next.toISOString() }, "Outside send window, sleeping");
-  await new Promise((r) => setTimeout(r, waitMs));
+function inSendWindow(start: number, end: number): boolean {
+  const { hour } = zonedNow();
+  if (start === end) return true;
+  // Windows like 22 → 6 wrap past midnight
+  return start < end ? hour >= start && hour < end : hour >= start || hour < end;
+}
+
+// Sleep until the allowed send window opens
+async function waitForSendWindow(start: number, end: number, campaignId: string): Promise<void> {
+  if (inSendWindow(start, end)) return;
+  logger.info({ campaignId, start, end, timezone: config.timezone, hour: zonedNow().hour }, "Outside send window, waiting");
+  while (!inSendWindow(start, end)) await cancellableSleep(60_000, campaignId);
+  logger.info({ campaignId }, "Send window open, resuming");
 }
 
 // In-memory daily sent count (resets on server restart, acceptable)
 const dailySentCounts = new Map<string, number>();
 
 function dailyKey(instanceId: string): string {
-  return `${instanceId}:${new Date().toISOString().slice(0, 10)}`;
+  return `${instanceId}:${zonedNow().date}`;
 }
 
 function getDailySent(instanceId: string): number {
@@ -194,12 +238,21 @@ async function _runWithLock(instanceId: string, campaignId: string): Promise<voi
   try {
     await runCampaign(campaignId);
   } catch (err) {
+    if (err instanceof CampaignCancelledError) {
+      logger.info({ instanceId, campaignId }, "Campaign cancelled");
+      await db("bulk_campaigns")
+        .where({ id: campaignId })
+        .update({ status: "cancelled", completed_at: new Date() })
+        .catch(() => {});
+      return;
+    }
     logger.error({ instanceId, campaignId, err }, "Campaign runner threw");
     db("bulk_campaigns")
       .where({ id: campaignId })
       .update({ status: "failed", completed_at: new Date() })
       .catch(() => {});
   } finally {
+    cancelFlags.delete(campaignId);
     instanceLocks.delete(instanceId);
     const queue = instanceQueues.get(instanceId);
     if (queue && queue.length > 0) {
@@ -292,13 +345,19 @@ export async function runCampaign(campaignId: string): Promise<void> {
     for (let i = 0; i < recipients.length; i += CHUNK) {
       const chunk = recipients.slice(i, i + CHUNK);
       try {
-        const results = (await meta.socket.onWhatsApp(...chunk)) ?? [];
-        for (let j = 0; j < chunk.length; j++) {
-          if (results[j]?.exists) {
-            valid.push(chunk[j]);
-          } else {
-            invalidCount++;
-          }
+        // onWhatsApp returns only the registered numbers, in server order —
+        // match by phone number, never by index.
+        const results = (await withTimeout(meta.socket.onWhatsApp(...chunk), 30_000, "onWhatsApp")) ?? [];
+        const phoneOf = (jid: string) => jid.split("@")[0].split(":")[0];
+        const registered = new Set(results.filter((r) => r.exists).map((r) => phoneOf(r.jid)));
+        const matched = chunk.filter((jid) => registered.has(phoneOf(jid)));
+        if (results.length > 0 && matched.length === 0) {
+          // Server answered with IDs we can't map back (e.g. LIDs) — fail open
+          logger.warn({ campaignId }, "Number check results could not be matched, keeping chunk");
+          valid.push(...chunk);
+        } else {
+          valid.push(...matched);
+          invalidCount += chunk.length - matched.length;
         }
         if (i + CHUNK < recipients.length) await randomDelay(800, 2000);
       } catch {
@@ -325,7 +384,7 @@ export async function runCampaign(campaignId: string): Promise<void> {
     } else if (payload.url) {
       try {
         if (!isPrivateUrl(payload.url as string)) {
-          const resp = await fetch(payload.url as string);
+          const resp = await fetch(payload.url as string, { signal: AbortSignal.timeout(30_000) });
           baseImageBuffer = Buffer.from(await resp.arrayBuffer());
         }
       } catch { /* URL unreachable — fall back to URL reference per-send */ }
@@ -344,31 +403,17 @@ export async function runCampaign(campaignId: string): Promise<void> {
 
   // ── 5. Send loop ──────────────────────────────────────────────────────
   for (let i = 0; i < capped.length; i++) {
-    if (cancelFlags.get(campaignId)) {
-      cancelFlags.delete(campaignId);
-      await db("bulk_campaigns").where({ id: campaignId }).update({ status: "cancelled", completed_at: new Date() });
-      return;
-    }
+    if (cancelFlags.get(campaignId)) throw new CampaignCancelledError();
 
     // Human hours enforcement: pause until the allowed window
-    if (opts.sendStartHour !== 0 || opts.sendEndHour !== 24) {
-      await sleepUntilSendWindow(opts.sendStartHour, opts.sendEndHour, campaignId);
-    }
+    await waitForSendWindow(opts.sendStartHour, opts.sendEndHour, campaignId);
 
-    // Daily limit: pause until the next window if limit reached
+    // Daily limit: wait for the next day's window, then carry on
     if (getDailySent(campaign.instance_id) >= opts.dailyLimit) {
-      logger.info({ campaignId, dailyLimit: opts.dailyLimit }, "Daily limit reached, sleeping until next window");
-      await sleepUntilSendWindow(opts.sendStartHour, opts.sendEndHour, campaignId);
-      // If the day rolled over, count may have reset; if not, keep checking
-      if (getDailySent(campaign.instance_id) >= opts.dailyLimit) {
-        await db("bulk_campaigns").where({ id: campaignId }).update({
-          status: "cancelled",
-          completed_at: new Date(),
-          skipped_count: skippedCount + (capped.length - i),
-        });
-        logger.warn({ campaignId }, "Daily limit still exceeded after window, cancelling remainder");
-        return;
-      }
+      const today = zonedNow().date;
+      logger.info({ campaignId, dailyLimit: opts.dailyLimit }, "Daily limit reached, waiting for next day");
+      while (zonedNow().date === today) await cancellableSleep(60_000, campaignId);
+      await waitForSendWindow(opts.sendStartHour, opts.sendEndHour, campaignId);
     }
 
     const target = capped[i];
@@ -393,10 +438,10 @@ export async function runCampaign(campaignId: string): Promise<void> {
         const lastKey = sessionManager.getLastMsgKey(campaign.instance_id, target);
         logger.info({ campaignId, target, lastKey: lastKey ?? null }, "markRead: attempting");
         if (lastKey) {
-          await currentMeta.socket.readMessages([lastKey]);
+          await withTimeout(currentMeta.socket.readMessages([lastKey]), 10_000, "readMessages");
           logger.info({ campaignId, target }, "markRead: readMessages sent");
         } else {
-          await currentMeta.socket.chatModify({ markRead: true, lastMessages: [] }, target);
+          await withTimeout(currentMeta.socket.chatModify({ markRead: true, lastMessages: [] }, target), 10_000, "chatModify");
           logger.info({ campaignId, target }, "markRead: chatModify fallback sent");
         }
       } catch (err) {
@@ -406,9 +451,9 @@ export async function runCampaign(campaignId: string): Promise<void> {
 
     if (opts.sendTypingIndicator) {
       try {
-        await currentMeta.socket.sendPresenceUpdate("composing", target);
+        await withTimeout(currentMeta.socket.sendPresenceUpdate("composing", target), 10_000, "presence");
         await randomDelay(700, 1800);
-        await currentMeta.socket.sendPresenceUpdate("paused", target);
+        await withTimeout(currentMeta.socket.sendPresenceUpdate("paused", target), 10_000, "presence");
       } catch {}
     }
 
@@ -453,7 +498,11 @@ export async function runCampaign(campaignId: string): Promise<void> {
     try {
       for (let attempt = 1; attempt <= 3; attempt++) {
         try {
-          await currentMeta.socket.sendMessage(target, content as Parameters<typeof currentMeta.socket.sendMessage>[1]);
+          await withTimeout(
+            currentMeta.socket.sendMessage(target, content as Parameters<typeof currentMeta.socket.sendMessage>[1]),
+            120_000,
+            "sendMessage"
+          );
           break;
         } catch (err) {
           const msg = err instanceof Error ? err.message : "";
@@ -494,9 +543,9 @@ export async function runCampaign(campaignId: string): Promise<void> {
     if (i < capped.length - 1) {
       if ((i + 1) % opts.batchSize === 0) {
         logger.info({ campaignId, batch: Math.ceil((i + 1) / opts.batchSize) }, "Batch complete, long pause");
-        await randomDelay(opts.batchPauseMs, opts.batchPauseMs + 15000);
+        await randomCancellableDelay(opts.batchPauseMs, opts.batchPauseMs + 15000, campaignId);
       } else {
-        await randomDelay(opts.minDelayMs, opts.maxDelayMs);
+        await randomCancellableDelay(opts.minDelayMs, opts.maxDelayMs, campaignId);
       }
     }
   }

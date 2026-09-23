@@ -14,7 +14,7 @@
   "dependencies": {
     "@hapi/boom": "^10.0.1",
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@whiskeysockets/baileys": "^7.0.0-rc13",
+    "@whiskeysockets/baileys": "^7.0.0-rc14",
     "axios": "^1.6.7",
     "bcrypt": "^6.0.0",
     "dotenv": "^16.4.1",
@@ -28,7 +28,7 @@
     "pino": "^8.18.0",
     "pino-pretty": "^11.0.0",
     "qrcode": "^1.5.3",
-    "sharp": "^0.33.2",
+    "sharp": "^0.35.4",
     "socks-proxy-agent": "^10.1.0",
     "zod": "^3.22.4"
   },

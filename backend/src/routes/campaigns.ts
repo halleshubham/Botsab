@@ -46,6 +46,11 @@ const optionsSchema = z
     sendTypingIndicator: z.boolean(),
     markReadBeforeSend: z.boolean(),
     maxRecipients: z.number().int().min(1).max(MAX_RECIPIENTS_HARD_CAP),
+    sendStartHour: z.number().int().min(0).max(23),
+    sendEndHour: z.number().int().min(0).max(24),
+    dailyLimit: z.number().int().min(1).max(1000),
+    checkNumberExists: z.boolean(),
+    respectOptOut: z.boolean(),
   })
   .partial()
   .optional();
@@ -161,7 +166,7 @@ router.post("/:campaignId/cancel", async (req: Request, res: Response) => {
     })
     .first();
   if (!campaign) return res.status(404).json({ error: "Campaign not found" });
-  if (!["pending", "running"].includes(campaign.status)) {
+  if (!["pending", "queued", "running"].includes(campaign.status)) {
     return res.status(400).json({ error: "Campaign is not active" });
   }
   cancelCampaign(req.params.campaignId, req.params.instanceId);
