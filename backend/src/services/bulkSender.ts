@@ -186,11 +186,16 @@ function inSendWindow(start: number, end: number): boolean {
   return start < end ? hour >= start && hour < end : hour >= start || hour < end;
 }
 
-// Sleep until the allowed send window opens
+// Sleep until the allowed send window opens. Group campaigns default to a
+// narrow 9-18 window vs contacts' 8-21, so this is hit far more often for
+// group lists - without the status update below, a campaign genuinely
+// waiting for its window is indistinguishable from one that's stuck.
 async function waitForSendWindow(start: number, end: number, campaignId: string): Promise<void> {
   if (inSendWindow(start, end)) return;
   logger.info({ campaignId, start, end, timezone: config.timezone, hour: zonedNow().hour }, "Outside send window, waiting");
+  await db("bulk_campaigns").where({ id: campaignId }).update({ status: "waiting_window" }).catch(() => {});
   while (!inSendWindow(start, end)) await cancellableSleep(60_000, campaignId);
+  await db("bulk_campaigns").where({ id: campaignId }).update({ status: "running" }).catch(() => {});
   logger.info({ campaignId }, "Send window open, resuming");
 }
 
@@ -412,7 +417,9 @@ export async function runCampaign(campaignId: string): Promise<void> {
     if (getDailySent(campaign.instance_id) >= opts.dailyLimit) {
       const today = zonedNow().date;
       logger.info({ campaignId, dailyLimit: opts.dailyLimit }, "Daily limit reached, waiting for next day");
+      await db("bulk_campaigns").where({ id: campaignId }).update({ status: "waiting_daily_limit" }).catch(() => {});
       while (zonedNow().date === today) await cancellableSleep(60_000, campaignId);
+      await db("bulk_campaigns").where({ id: campaignId }).update({ status: "running" }).catch(() => {});
       await waitForSendWindow(opts.sendStartHour, opts.sendEndHour, campaignId);
     }
 

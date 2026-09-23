@@ -230,7 +230,15 @@ export type Campaign = {
   list_id: string;
   message_payload: Record<string, unknown>;
   options: BulkCampaignOptions;
-  status: "pending" | "queued" | "running" | "completed" | "failed" | "cancelled";
+  status:
+    | "pending"
+    | "queued"
+    | "running"
+    | "waiting_window"
+    | "waiting_daily_limit"
+    | "completed"
+    | "failed"
+    | "cancelled";
   total_count: number;
   sent_count: number;
   failed_count: number;

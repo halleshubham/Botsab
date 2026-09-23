@@ -21,13 +21,28 @@ import {
 import { toast } from "@/hooks/use-toast";
 
 const STATUS_CONFIG = {
-  pending:   { label: "Pending",   variant: "secondary" as const,   icon: Clock },
-  queued:    { label: "Queued",    variant: "secondary" as const,   icon: ListOrdered },
-  running:   { label: "Running",   variant: "default" as const,     icon: Loader2 },
-  completed: { label: "Completed", variant: "default" as const,     icon: CheckCircle },
-  failed:    { label: "Failed",    variant: "destructive" as const,  icon: AlertCircle },
-  cancelled: { label: "Cancelled", variant: "secondary" as const,   icon: XCircle },
+  pending:              { label: "Pending",              variant: "secondary" as const,   icon: Clock },
+  queued:               { label: "Queued",               variant: "secondary" as const,   icon: ListOrdered },
+  running:              { label: "Running",               variant: "default" as const,     icon: Loader2 },
+  waiting_window:       { label: "Waiting for send window", variant: "secondary" as const, icon: Clock },
+  waiting_daily_limit:  { label: "Waiting for daily limit", variant: "secondary" as const, icon: Clock },
+  completed:            { label: "Completed",             variant: "default" as const,     icon: CheckCircle },
+  failed:               { label: "Failed",                variant: "destructive" as const,  icon: AlertCircle },
+  cancelled:            { label: "Cancelled",             variant: "secondary" as const,   icon: XCircle },
 } as const;
+
+// Campaign is doing something (or about to) - keep polling and allow cancel.
+// waiting_window/waiting_daily_limit are "running" from the runner's own
+// perspective (see bulkSender.ts's waitForSendWindow), just paused for the
+// anti-ban hour/day gate - without treating them as active here, a group
+// campaign waiting for its 9-18 window looks identical to a dead one.
+const ACTIVE_CAMPAIGN_STATUSES = [
+  "pending",
+  "queued",
+  "running",
+  "waiting_window",
+  "waiting_daily_limit",
+] as const;
 
 const DEFAULT_OPTS: BulkCampaignOptions = {
   minDelayMs: 10_000,
@@ -131,7 +146,7 @@ export function Campaigns() {
     refetchInterval: (query) => {
       const data = query.state.data;
       if (!data) return false;
-      return (data as Campaign[]).some((c) => ["pending", "queued", "running"].includes(c.status)) ? 3000 : false;
+      return (data as Campaign[]).some((c) => (ACTIVE_CAMPAIGN_STATUSES as readonly string[]).includes(c.status)) ? 3000 : false;
     },
   });
 
@@ -143,7 +158,7 @@ export function Campaigns() {
       const data = query.state.data;
       if (!data) return false;
       const d = data as { status: string };
-      return d.status === "running" || d.status === "pending" ? 3000 : false;
+      return (ACTIVE_CAMPAIGN_STATUSES as readonly string[]).includes(d.status) ? 3000 : false;
     },
   });
 
@@ -686,7 +701,7 @@ export function Campaigns() {
                             </div>
                           )}
                         </div>
-                        {["pending", "queued", "running"].includes(c.status) && (
+                        {(ACTIVE_CAMPAIGN_STATUSES as readonly string[]).includes(c.status) && (
                           <Button
                             size="sm"
                             variant="destructive"
