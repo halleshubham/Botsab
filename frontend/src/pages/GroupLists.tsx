@@ -57,7 +57,7 @@ export function GroupLists() {
   });
   const connectedInstances = instances.filter((i) => i.status === "connected");
 
-  // Live groups from the picked instance (exclude announce-only = admin-only)
+  // Live groups from the picked instance
   const { data: liveGroups = [], isLoading: loadingGroups } = useQuery({
     queryKey: ["groups", pickerInstance],
     queryFn: () => listGroups(pickerInstance).then((r) => r.data),
@@ -65,9 +65,13 @@ export function GroupLists() {
     select: (d) => Array.isArray(d) ? d : [],
   });
 
-  // Sendable groups: exclude announce (only admins can post)
+  // Sendable groups: admin-only groups are kept when we are an admin there
+  const blockedGroups = useMemo(
+    () => liveGroups.filter((g) => g.announce && !g.isAdmin),
+    [liveGroups]
+  );
   const sendableGroups = useMemo(
-    () => liveGroups.filter((g) => !g.announce),
+    () => liveGroups.filter((g) => !g.announce || g.isAdmin),
     [liveGroups]
   );
 
@@ -346,11 +350,11 @@ export function GroupLists() {
                     </div>
 
                     {/* Announce-only info */}
-                    {!loadingGroups && liveGroups.some((g) => g.announce) && (
+                    {!loadingGroups && blockedGroups.length > 0 && (
                       <p className="text-xs text-muted-foreground">
-                        {liveGroups.filter((g) => g.announce).length} admin-only group
-                        {liveGroups.filter((g) => g.announce).length !== 1 ? "s" : ""} hidden
-                        (your account cannot send messages there).
+                        {blockedGroups.length} admin-only group
+                        {blockedGroups.length !== 1 ? "s" : ""} hidden
+                        (you are not an admin there, so you cannot send messages).
                       </p>
                     )}
 

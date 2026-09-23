@@ -124,6 +124,7 @@ export type Group = {
   participantCount: number;
   createdAt: string | null;
   announce: boolean;
+  isAdmin?: boolean;
 };
 export const listGroups = (instanceId: string) =>
   api.get<Group[]>(`/instances/${instanceId}/groups`);
