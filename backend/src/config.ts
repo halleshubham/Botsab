@@ -21,4 +21,6 @@ export const config = {
   smtpPass: process.env.SMTP_PASS ?? "",
   smtpFrom: process.env.SMTP_FROM ?? "",
   appUrl: process.env.APP_URL ?? "http://localhost:5173",
+  // IANA timezone for campaign send-hour windows and daily limits
+  timezone: process.env.TIMEZONE || "Asia/Kolkata",
 };

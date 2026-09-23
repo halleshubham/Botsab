@@ -616,7 +616,7 @@ export function Campaigns() {
                     <p>• Msgs within a batch are spaced {fmtMs(opts.minDelayMs)}–{fmtMs(opts.maxDelayMs)} apart (random)</p>
                     {opts.shuffle && <p>• Send order is randomised to avoid sequential patterns</p>}
                     {opts.appendSuffix && <p>• A unique {opts.suffixType} suffix makes each message distinct</p>}
-                    <p>• Sends only between {opts.sendStartHour}:00 and {opts.sendEndHour}:00 (server local time); max {opts.dailyLimit}/day</p>
+                    <p>• Sends only between {opts.sendStartHour}:00 and {opts.sendEndHour}:00 (server TIMEZONE, default IST); max {opts.dailyLimit}/day</p>
                   </div>
                 </div>
               )}
