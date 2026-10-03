@@ -21,28 +21,14 @@ import {
 import { toast } from "@/hooks/use-toast";
 
 const STATUS_CONFIG = {
-  pending:              { label: "Pending",              variant: "secondary" as const,   icon: Clock },
-  queued:               { label: "Queued",               variant: "secondary" as const,   icon: ListOrdered },
-  running:              { label: "Running",               variant: "default" as const,     icon: Loader2 },
-  waiting_window:       { label: "Waiting for send window", variant: "secondary" as const, icon: Clock },
-  waiting_daily_limit:  { label: "Waiting for daily limit", variant: "secondary" as const, icon: Clock },
-  completed:            { label: "Completed",             variant: "default" as const,     icon: CheckCircle },
-  failed:               { label: "Failed",                variant: "destructive" as const,  icon: AlertCircle },
-  cancelled:            { label: "Cancelled",             variant: "secondary" as const,   icon: XCircle },
+  pending:   { label: "Pending",   variant: "secondary" as const,   icon: Clock },
+  queued:    { label: "Queued",    variant: "secondary" as const,   icon: ListOrdered },
+  running:   { label: "Running",   variant: "default" as const,     icon: Loader2 },
+  waiting:   { label: "Waiting for send hours", variant: "secondary" as const, icon: Clock },
+  completed: { label: "Completed", variant: "default" as const,     icon: CheckCircle },
+  failed:    { label: "Failed",    variant: "destructive" as const,  icon: AlertCircle },
+  cancelled: { label: "Cancelled", variant: "secondary" as const,   icon: XCircle },
 } as const;
-
-// Campaign is doing something (or about to) - keep polling and allow cancel.
-// waiting_window/waiting_daily_limit are "running" from the runner's own
-// perspective (see bulkSender.ts's waitForSendWindow), just paused for the
-// anti-ban hour/day gate - without treating them as active here, a group
-// campaign waiting for its 9-18 window looks identical to a dead one.
-const ACTIVE_CAMPAIGN_STATUSES = [
-  "pending",
-  "queued",
-  "running",
-  "waiting_window",
-  "waiting_daily_limit",
-] as const;
 
 const DEFAULT_OPTS: BulkCampaignOptions = {
   minDelayMs: 10_000,
@@ -63,23 +49,38 @@ const DEFAULT_OPTS: BulkCampaignOptions = {
   respectOptOut: true,
 };
 
+// Balanced group defaults: a full 100-group list goes out in a few hours
+// with human-like spacing, instead of taking weeks.
 const DEFAULT_GROUP_OPTS: BulkCampaignOptions = {
-  minDelayMs: 180_000,
-  maxDelayMs: 480_000,
-  batchSize: 2,
-  batchPauseMs: 2_700_000,
+  minDelayMs: 45_000,
+  maxDelayMs: 120_000,
+  batchSize: 5,
+  batchPauseMs: 600_000,
   shuffle: true,
   appendSuffix: false,
   suffixType: "invisible",
   suffixLength: 4,
   sendTypingIndicator: true,
   markReadBeforeSend: true,
+  maxRecipients: 100,
+  sendStartHour: 8,
+  sendEndHour: 21,
+  dailyLimit: 50,
+  checkNumberExists: false,
+  respectOptOut: true,
+};
+
+// Previous, much slower preset for new or recently flagged numbers
+const CONSERVATIVE_GROUP_OPTS: BulkCampaignOptions = {
+  ...DEFAULT_GROUP_OPTS,
+  minDelayMs: 180_000,
+  maxDelayMs: 480_000,
+  batchSize: 2,
+  batchPauseMs: 2_700_000,
   maxRecipients: 10,
   sendStartHour: 9,
   sendEndHour: 18,
   dailyLimit: 8,
-  checkNumberExists: false,
-  respectOptOut: true,
 };
 
 function fmtMs(ms: number): string {
@@ -146,7 +147,7 @@ export function Campaigns() {
     refetchInterval: (query) => {
       const data = query.state.data;
       if (!data) return false;
-      return (data as Campaign[]).some((c) => (ACTIVE_CAMPAIGN_STATUSES as readonly string[]).includes(c.status)) ? 3000 : false;
+      return (data as Campaign[]).some((c) => ["pending", "queued", "running", "waiting"].includes(c.status)) ? 3000 : false;
     },
   });
 
@@ -158,7 +159,7 @@ export function Campaigns() {
       const data = query.state.data;
       if (!data) return false;
       const d = data as { status: string };
-      return (ACTIVE_CAMPAIGN_STATUSES as readonly string[]).includes(d.status) ? 3000 : false;
+      return ["pending", "running", "waiting"].includes(d.status) ? 3000 : false;
     },
   });
 
@@ -309,8 +310,16 @@ export function Campaigns() {
               <div className="rounded-md border border-yellow-200 bg-yellow-50 px-3 py-2 text-xs text-yellow-800 flex items-start gap-2">
                 <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0 text-yellow-600" />
                 <span>
-                  <strong>Group mode:</strong> conservative defaults applied — 3–8 min between sends, batch of 2, max 8 groups/day.
-                  Images are re-encoded per send to avoid hash-based detection.
+                  <strong>Group mode:</strong> {fmtMs(opts.minDelayMs)}–{fmtMs(opts.maxDelayMs)} between groups,
+                  batches of {opts.batchSize} with {fmtMs(opts.batchPauseMs)} pauses, max {opts.maxRecipients} groups/run
+                  and {opts.dailyLimit}/day. Images are re-encoded per send to avoid hash-based detection.{" "}
+                  <button type="button" className="underline font-medium" onClick={() => setOpts({ ...DEFAULT_GROUP_OPTS })}>
+                    Balanced
+                  </button>
+                  {" · "}
+                  <button type="button" className="underline font-medium" onClick={() => setOpts({ ...CONSERVATIVE_GROUP_OPTS })}>
+                    Conservative
+                  </button>
                 </span>
               </div>
             )}
@@ -701,7 +710,7 @@ export function Campaigns() {
                             </div>
                           )}
                         </div>
-                        {(ACTIVE_CAMPAIGN_STATUSES as readonly string[]).includes(c.status) && (
+                        {["pending", "queued", "running", "waiting"].includes(c.status) && (
                           <Button
                             size="sm"
                             variant="destructive"
