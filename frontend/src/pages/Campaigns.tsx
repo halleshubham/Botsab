@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Send, ChevronDown, ChevronUp, RefreshCw, XCircle, CheckCircle, AlertCircle, Clock, Loader2, ImageIcon, Type, X, ListOrdered } from "lucide-react";
+import { Send, ChevronDown, ChevronUp, RefreshCw, XCircle, CheckCircle, AlertCircle, Clock, Loader2, ImageIcon, Type, X, ListOrdered, Video as VideoIcon } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,6 +29,10 @@ const STATUS_CONFIG = {
   failed:    { label: "Failed",    variant: "destructive" as const,  icon: AlertCircle },
   cancelled: { label: "Cancelled", variant: "secondary" as const,   icon: XCircle },
 } as const;
+
+// Matches the backend upload limit (routes/media.ts) and nginx client_max_body_size
+const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
+const MAX_IMAGE_BYTES = 16 * 1024 * 1024;
 
 const DEFAULT_OPTS: BulkCampaignOptions = {
   minDelayMs: 10_000,
@@ -105,7 +109,7 @@ export function Campaigns() {
   const [instanceId, setInstanceId] = useState("");
   const [listType, setListType] = useState<"contact" | "group">("contact");
   const [listId, setListId] = useState("");
-  const [msgType, setMsgType] = useState<"text" | "image">("text");
+  const [msgType, setMsgType] = useState<"text" | "image" | "video">("text");
   const [msgText, setMsgText] = useState("");
   const [msgVariants, setMsgVariants] = useState("");
   const [showVariants, setShowVariants] = useState(false);
@@ -169,6 +173,12 @@ export function Campaigns() {
 
   function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null;
+    const maxBytes = msgType === "video" ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
+    if (file && file.size > maxBytes) {
+      toast({ title: `File too large — max ${maxBytes / 1024 / 1024} MB`, variant: "destructive" });
+      e.target.value = "";
+      return;
+    }
     setImgFile(file);
     if (file) {
       const url = URL.createObjectURL(file);
@@ -190,17 +200,17 @@ export function Campaigns() {
     e.preventDefault();
     if (!instanceId || !listId) return;
     if (msgType === "text" && !msgText.trim()) return;
-    if (msgType === "image" && !imgFile) return;
+    if ((msgType === "image" || msgType === "video") && !imgFile) return;
     setCreating(true);
     try {
       let message: Record<string, unknown>;
-      if (msgType === "image") {
+      if (msgType === "image" || msgType === "video") {
         const { data: uploaded } = await uploadMedia(imgFile!);
         const captionVariants = showCaptionVariants
           ? [imgCaption.trim(), ...imgCaptionVariants.split("\n").map((s) => s.trim()).filter(Boolean)].filter(Boolean)
           : undefined;
         message = {
-          type: "image",
+          type: msgType,
           fileId: uploaded.fileId,
           mimeType: uploaded.mimeType,
           caption: imgCaption.trim() || undefined,
@@ -339,12 +349,21 @@ export function Campaigns() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setMsgType("image")}
+                  onClick={() => { if (msgType !== "image") clearImage(); setMsgType("image"); }}
                   className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm transition-colors ${
                     msgType === "image" ? "border-primary bg-primary/5 text-primary" : "border-border hover:border-muted-foreground/40"
                   }`}
                 >
                   <ImageIcon className="h-3.5 w-3.5" /> Image
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { if (msgType !== "video") clearImage(); setMsgType("video"); }}
+                  className={`flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm transition-colors ${
+                    msgType === "video" ? "border-primary bg-primary/5 text-primary" : "border-border hover:border-muted-foreground/40"
+                  }`}
+                >
+                  <VideoIcon className="h-3.5 w-3.5" /> Video
                 </button>
               </div>
             </div>
@@ -386,16 +405,24 @@ export function Campaigns() {
               </>
             ) : (
               <>
-                {/* Image upload */}
+                {/* Image / video upload */}
                 <div className="space-y-2">
-                  <Label>Image file <span className="text-xs text-muted-foreground font-normal">(JPEG, PNG, WebP — max 16 MB)</span></Label>
+                  {msgType === "video" ? (
+                    <Label>Video file <span className="text-xs text-muted-foreground font-normal">(MP4 with H.264 plays everywhere — max 100 MB)</span></Label>
+                  ) : (
+                    <Label>Image file <span className="text-xs text-muted-foreground font-normal">(JPEG, PNG, WebP — max 16 MB)</span></Label>
+                  )}
                   {imgPreview ? (
                     <div className="relative inline-block">
-                      <img
-                        src={imgPreview}
-                        alt="preview"
-                        className="max-h-48 rounded-md border object-contain"
-                      />
+                      {msgType === "video" ? (
+                        <video src={imgPreview} controls muted className="max-h-48 rounded-md border" />
+                      ) : (
+                        <img
+                          src={imgPreview}
+                          alt="preview"
+                          className="max-h-48 rounded-md border object-contain"
+                        />
+                      )}
                       <button
                         type="button"
                         onClick={clearImage}
@@ -409,14 +436,18 @@ export function Campaigns() {
                       className="flex h-28 cursor-pointer flex-col items-center justify-center rounded-md border-2 border-dashed border-border transition-colors hover:border-primary/60"
                       onClick={() => fileInputRef.current?.click()}
                     >
-                      <ImageIcon className="h-8 w-8 text-muted-foreground mb-1" />
-                      <p className="text-sm text-muted-foreground">Click to select image</p>
+                      {msgType === "video" ? (
+                        <VideoIcon className="h-8 w-8 text-muted-foreground mb-1" />
+                      ) : (
+                        <ImageIcon className="h-8 w-8 text-muted-foreground mb-1" />
+                      )}
+                      <p className="text-sm text-muted-foreground">Click to select {msgType}</p>
                     </div>
                   )}
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept="image/*"
+                    accept={msgType === "video" ? "video/mp4,video/*" : "image/*"}
                     className="hidden"
                     onChange={handleImageChange}
                   />
@@ -427,7 +458,7 @@ export function Campaigns() {
                   <Label>Caption <span className="text-xs text-muted-foreground font-normal">(optional)</span></Label>
                   <textarea
                     className="w-full h-16 rounded-md border border-input bg-background px-3 py-2 text-sm resize-y focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                    placeholder="Add a caption to your image…"
+                    placeholder={`Add a caption to your ${msgType}…`}
                     value={imgCaption}
                     onChange={(e) => setImgCaption(e.target.value)}
                     maxLength={1024}
@@ -651,7 +682,7 @@ export function Campaigns() {
               disabled={
                 creating || !instanceId || !listId ||
                 (msgType === "text" && !msgText.trim()) ||
-                (msgType === "image" && !imgFile)
+                ((msgType === "image" || msgType === "video") && !imgFile)
               }
               className="w-full sm:w-auto"
             >

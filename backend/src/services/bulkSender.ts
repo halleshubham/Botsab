@@ -380,21 +380,29 @@ export async function runCampaign(campaignId: string): Promise<void> {
   const capped = recipients.slice(0, Math.min(opts.maxRecipients, MAX_RECIPIENTS_HARD_CAP));
   if (opts.shuffle) shuffle(capped);
 
-  // ── 4b. Pre-load image buffer (once) for randomization per send ───────
-  let baseImageBuffer: Buffer | null = null;
-  if (payload.type === "image") {
+  // ── 4b. Pre-load media buffer (once) ──────────────────────────────────
+  // Images are re-encoded per send from this; videos are sent as-is, but
+  // loading once still avoids re-reading/re-downloading the file for every
+  // recipient.
+  let baseMediaBuffer: Buffer | null = null;
+  if (payload.type === "image" || payload.type === "video") {
     if (payload.fileId) {
       try {
-        baseImageBuffer = fs.readFileSync(path.resolve(config.uploadsDir, path.basename(payload.fileId as string)));
-      } catch { /* file missing — will fail per-send */ }
+        baseMediaBuffer = fs.readFileSync(path.resolve(config.uploadsDir, path.basename(payload.fileId as string)));
+      } catch { /* file missing — checked below */ }
     } else if (payload.url) {
       try {
         if (!isPrivateUrl(payload.url as string)) {
-          const resp = await fetch(payload.url as string, { signal: AbortSignal.timeout(30_000) });
-          baseImageBuffer = Buffer.from(await resp.arrayBuffer());
+          const timeoutMs = payload.type === "video" ? 120_000 : 30_000;
+          const resp = await fetch(payload.url as string, { signal: AbortSignal.timeout(timeoutMs) });
+          if (resp.ok) baseMediaBuffer = Buffer.from(await resp.arrayBuffer());
         }
       } catch { /* URL unreachable — fall back to URL reference per-send */ }
     }
+  }
+  if (payload.fileId && !baseMediaBuffer) {
+    // Every send would fail the same way — fail the campaign once, clearly
+    throw new Error(`Uploaded ${payload.type} file not found: ${path.basename(payload.fileId as string)}`);
   }
 
   await db("bulk_campaigns").where({ id: campaignId }).update({
@@ -473,9 +481,9 @@ export async function runCampaign(campaignId: string): Promise<void> {
         break;
       case "image": {
         const cap = pickCaption(payload);
-        if (baseImageBuffer) {
+        if (baseMediaBuffer) {
           // Re-encode with random quality → unique hash per send
-          const randomized = await randomizeImageBuffer(baseImageBuffer);
+          const randomized = await randomizeImageBuffer(baseMediaBuffer);
           content = {
             image: randomized,
             caption: cap ? applySuffix(cap, opts) : undefined,
@@ -493,12 +501,15 @@ export async function runCampaign(campaignId: string): Promise<void> {
       case "document":
         content = { document: { url: payload.url }, fileName: payload.filename, mimetype: payload.mimetype };
         break;
-      case "video":
+      case "video": {
+        const cap = pickCaption(payload);
         content = {
-          video: { url: payload.url },
-          caption: payload.caption ? applySuffix(payload.caption as string, opts) : undefined,
+          video: baseMediaBuffer ?? { url: payload.url as string },
+          caption: cap ? applySuffix(cap, opts) : undefined,
+          mimetype: (payload.mimeType as string | undefined) ?? "video/mp4",
         };
         break;
+      }
       default:
         content = { text: "" };
     }
@@ -508,7 +519,7 @@ export async function runCampaign(campaignId: string): Promise<void> {
         try {
           await withTimeout(
             currentMeta.socket.sendMessage(target, content as Parameters<typeof currentMeta.socket.sendMessage>[1]),
-            120_000,
+            payload.type === "video" ? 300_000 : 120_000, // large videos take a while to upload
             "sendMessage"
           );
           break;

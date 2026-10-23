@@ -15,6 +15,11 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
+# ffmpeg lets Baileys extract a preview thumbnail for video messages -
+# without it the thumbnail step fails silently and recipients see a blank
+# preview until they tap play.
+RUN apk add --no-cache ffmpeg
+
 # Install production deps only (sharp needs native build so must run here)
 COPY package*.json ./
 RUN npm ci --omit=dev --legacy-peer-deps

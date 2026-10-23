@@ -211,6 +211,12 @@ function buildSections(ctx: CurlCtx): Section[] {
             `curl -X POST ${b}/instances/${id}/groups/${gid}/send \\\n  ${h} \\\n  ${j} \\\n  -d '{\n    "type": "image",\n    "fileId": "uuid-returned-by-upload.jpg",\n    "caption": "Check this out!"\n  }'`,
         },
         {
+          method: "POST", path: "/instances/:instanceId/groups/:groupId/send — video (fileId)",
+          description: "Send a video to a group using a fileId from POST /media/upload (or pass \"url\" instead). Omit @g.us from the group ID.",
+          curl: () =>
+            `curl -X POST ${b}/instances/${id}/groups/${gid}/send \\\n  ${h} \\\n  ${j} \\\n  -d '{\n    "type": "video",\n    "fileId": "uuid-returned-by-upload.mp4",\n    "caption": "Check this out!"\n  }'`,
+        },
+        {
           method: "POST", path: "/instances/:instanceId/groups",
           description: "Create a new group with given participants.",
           curl: () =>
