@@ -8,6 +8,8 @@ export const config = {
   bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS ?? "12"),
   sessionsDir: process.env.SESSIONS_DIR ?? "./sessions",
   uploadsDir: process.env.UPLOADS_DIR ?? "./uploads",
+  // Uploaded media older than this is deleted hourly (0 disables cleanup)
+  uploadsRetentionDays: parseInt(process.env.UPLOADS_RETENTION_DAYS ?? "7"),
   rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS ?? "60000"),
   rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS ?? "100"),
   webhookTimeoutMs: parseInt(process.env.WEBHOOK_TIMEOUT_MS ?? "10000"),

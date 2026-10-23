@@ -188,6 +188,7 @@ For non-Claude clients (Cursor, scripts):
 | `BCRYPT_ROUNDS` | | `12` | bcrypt work factor |
 | `SESSIONS_DIR` | | `./sessions` | Where Baileys auth state is stored |
 | `UPLOADS_DIR` | | `./uploads` | Where uploaded media is stored |
+| `UPLOADS_RETENTION_DAYS` | | `7` | Uploaded media older than this is deleted hourly; files used by unfinished campaigns are kept. `0` disables cleanup |
 | `RATE_LIMIT_MAX_REQUESTS` | | `100` | Max requests per window per key |
 | `RATE_LIMIT_WINDOW_MS` | | `60000` | Rate limit window in ms |
 | `WEBHOOK_TIMEOUT_MS` | | `10000` | Per-webhook request timeout |
