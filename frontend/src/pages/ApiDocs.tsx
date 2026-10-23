@@ -231,13 +231,96 @@ function buildSections(ctx: CurlCtx): Section[] {
       ],
     },
     {
+      title: "Contact & Group Lists",
+      endpoints: [
+        {
+          method: "POST", path: "/contact-lists",
+          description: "Create a named contact list (max 20 lists per account).",
+          curl: () =>
+            `curl -X POST ${b}/contact-lists \\\n  ${h} \\\n  ${j} \\\n  -d '{\n    "name": "Customers",\n    "description": "Opted-in customers"\n  }'`,
+        },
+        {
+          method: "POST", path: "/contact-lists/:listId/members",
+          description: "Add phone numbers (digits only, with country code) to a contact list. Duplicates are skipped; max 200 per list.",
+          curl: () =>
+            `curl -X POST ${b}/contact-lists/LIST_ID/members \\\n  ${h} \\\n  ${j} \\\n  -d '{\n    "members": [\n      { "phone_number": "919876543210", "label": "Asha" },\n      { "phone_number": "919812345678" }\n    ]\n  }'`,
+        },
+        {
+          method: "GET", path: "/contact-lists",
+          description: "List your contact lists with member counts.",
+          curl: () => `curl ${b}/contact-lists \\\n  ${h}`,
+        },
+        {
+          method: "POST", path: "/group-lists",
+          description: "Create a named group list (max 20 lists per account).",
+          curl: () =>
+            `curl -X POST ${b}/group-lists \\\n  ${h} \\\n  ${j} \\\n  -d '{\n    "name": "Community groups"\n  }'`,
+        },
+        {
+          method: "POST", path: "/group-lists/:listId/members",
+          description: "Add groups to a group list by JID (from GET /instances/:instanceId/groups). Max 100 per list.",
+          curl: () =>
+            `curl -X POST ${b}/group-lists/LIST_ID/members \\\n  ${h} \\\n  ${j} \\\n  -d '{\n    "members": [\n      { "group_jid": "120363000000000000@g.us", "label": "Pune chapter" }\n    ]\n  }'`,
+        },
+        {
+          method: "GET", path: "/group-lists",
+          description: "List your group lists with member counts.",
+          curl: () => `curl ${b}/group-lists \\\n  ${h}`,
+        },
+      ],
+    },
+    {
+      title: "Campaigns",
+      endpoints: [
+        {
+          method: "POST", path: "/instances/:instanceId/campaigns — text",
+          description: "Start a bulk campaign to a contact or group list. Runs in the background with anti-ban pacing and returns the campaign id immediately. Optional \"variants\" picks a random text per recipient.",
+          curl: () =>
+            `curl -X POST ${b}/instances/${id}/campaigns \\\n  ${h} \\\n  ${j} \\\n  -d '{\n    "list_type": "contact",\n    "list_id": "LIST_ID",\n    "message": {\n      "type": "text",\n      "text": "Hello from Botsab!",\n      "variants": ["Hi there from Botsab!"]\n    }\n  }'`,
+        },
+        {
+          method: "POST", path: "/instances/:instanceId/campaigns — image (fileId)",
+          description: "Image campaign using a fileId from POST /media/upload (or \"url\"). Each send is re-encoded to a unique file; optional \"captionVariants\" picks a random caption per recipient.",
+          curl: () =>
+            `curl -X POST ${b}/instances/${id}/campaigns \\\n  ${h} \\\n  ${j} \\\n  -d '{\n    "list_type": "group",\n    "list_id": "LIST_ID",\n    "message": {\n      "type": "image",\n      "fileId": "uuid-returned-by-upload.jpg",\n      "caption": "Check this out!",\n      "captionVariants": ["Have a look!"]\n    }\n  }'`,
+        },
+        {
+          method: "POST", path: "/instances/:instanceId/campaigns — video (fileId)",
+          description: "Video campaign using a fileId from POST /media/upload (or \"url\"). MP4 with H.264 plays on every WhatsApp client; duration, dimensions and a preview thumbnail are added automatically.",
+          curl: () =>
+            `curl -X POST ${b}/instances/${id}/campaigns \\\n  ${h} \\\n  ${j} \\\n  -d '{\n    "list_type": "contact",\n    "list_id": "LIST_ID",\n    "message": {\n      "type": "video",\n      "fileId": "uuid-returned-by-upload.mp4",\n      "caption": "Watch our new reel",\n      "captionVariants": ["Our new reel is out!"]\n    }\n  }'`,
+        },
+        {
+          method: "POST", path: "/instances/:instanceId/campaigns — custom pacing",
+          description: "Override any pacing option. Defaults differ for contact and group lists; send hours use the server TIMEZONE (default Asia/Kolkata).",
+          curl: () =>
+            `curl -X POST ${b}/instances/${id}/campaigns \\\n  ${h} \\\n  ${j} \\\n  -d '{\n    "list_type": "group",\n    "list_id": "LIST_ID",\n    "message": { "type": "text", "text": "Hello groups!" },\n    "options": {\n      "minDelayMs": 45000,\n      "maxDelayMs": 120000,\n      "batchSize": 5,\n      "batchPauseMs": 600000,\n      "maxRecipients": 100,\n      "dailyLimit": 50,\n      "sendStartHour": 8,\n      "sendEndHour": 21\n    }\n  }'`,
+        },
+        {
+          method: "GET", path: "/instances/:instanceId/campaigns",
+          description: "List the latest 100 campaigns with status (pending, queued, running, waiting, completed, failed, cancelled) and sent/failed/skipped counts.",
+          curl: () => `curl ${b}/instances/${id}/campaigns \\\n  ${h}`,
+        },
+        {
+          method: "GET", path: "/instances/:instanceId/campaigns/:campaignId",
+          description: "Campaign detail with a per-recipient result log (sent, failed or skipped, with the error).",
+          curl: () => `curl ${b}/instances/${id}/campaigns/CAMPAIGN_ID \\\n  ${h}`,
+        },
+        {
+          method: "POST", path: "/instances/:instanceId/campaigns/:campaignId/cancel",
+          description: "Cancel a pending, queued, running or waiting campaign. A running one stops within a few seconds.",
+          curl: () => `curl -X POST ${b}/instances/${id}/campaigns/CAMPAIGN_ID/cancel \\\n  ${h}`,
+        },
+      ],
+    },
+    {
       title: "Media",
       endpoints: [
         {
           method: "POST", path: "/media/upload",
-          description: "Upload an image or video file (max 100 MB). Returns a fileId you can pass as \"fileId\" in any send endpoint instead of a public URL.",
+          description: "Upload an image or video file (max 100 MB). Returns a fileId you can pass as \"fileId\" in send and campaign endpoints instead of a public URL.",
           curl: () =>
-            `curl -X POST ${b}/media/upload \\\n  ${h} \\\n  -F "file=@/path/to/photo.jpg"`,
+            `curl -X POST ${b}/media/upload \\\n  ${h} \\\n  -F "file=@/path/to/reel.mp4"`,
         },
       ],
     },
