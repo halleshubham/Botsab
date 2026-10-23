@@ -6,7 +6,7 @@ import type { GroupMetadata } from "@whiskeysockets/baileys";
 import { requireApiKey, requireInstanceOwner } from "../auth/middleware.js";
 import { sessionManager } from "../sessions/manager.js";
 import { config } from "../config.js";
-import { probeVideo } from "../services/videoMeta.js";
+import { prepareVideoForWhatsApp } from "../services/videoMeta.js";
 
 const router = Router({ mergeParams: true });
 
@@ -123,7 +123,8 @@ router.post("/:groupId/send", async (req: Request, res: Response) => {
         if (!fs.existsSync(filePath)) {
           return res.status(400).json({ error: "File not found" });
         }
-        content = { video: fs.readFileSync(filePath), caption: body.caption, mimetype: "video/mp4", ...(await probeVideo(filePath)) };
+        const { media, meta } = await prepareVideoForWhatsApp(filePath);
+        content = { video: media, caption: body.caption, mimetype: "video/mp4", ...meta };
       } else {
         content = { video: { url: body.url! }, caption: body.caption };
       }
