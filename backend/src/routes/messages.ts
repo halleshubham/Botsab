@@ -5,6 +5,7 @@ import { z } from "zod";
 import { requireApiKey, requireInstanceOwner } from "../auth/middleware.js";
 import { sessionManager } from "../sessions/manager.js";
 import { config } from "../config.js";
+import { probeVideo } from "../services/videoMeta.js";
 
 const router = Router({ mergeParams: true });
 
@@ -51,7 +52,7 @@ async function sendSingleMessage(instanceId: string, body: z.infer<typeof sendSc
       if (body.fileId) {
         const filePath = path.resolve(config.uploadsDir, path.basename(body.fileId));
         if (!fs.existsSync(filePath)) throw new Error("File not found");
-        content = { video: fs.readFileSync(filePath), caption: body.caption };
+        content = { video: fs.readFileSync(filePath), caption: body.caption, mimetype: "video/mp4", ...(await probeVideo(filePath)) };
       } else {
         content = { video: { url: body.url! }, caption: body.caption };
       }
