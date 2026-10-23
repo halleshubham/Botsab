@@ -7,7 +7,7 @@ import { sessionManager } from "../sessions/manager.js";
 import { logger } from "../utils/logger.js";
 import { config } from "../config.js";
 import { isPrivateUrl } from "../webhooks/dispatcher.js";
-import { probeVideo, type VideoMeta } from "./videoMeta.js";
+import { prepareVideoForWhatsApp, type VideoMeta } from "./videoMeta.js";
 
 export interface BulkOptions {
   minDelayMs: number;
@@ -401,8 +401,14 @@ export async function runCampaign(campaignId: string): Promise<void> {
       } catch { /* URL unreachable — fall back to URL reference per-send */ }
     }
   }
-  // Same video for every recipient — probe its duration/dimensions once
-  const videoMeta: VideoMeta = payload.type === "video" && baseMediaBuffer ? await probeVideo(baseMediaBuffer) : {};
+  // Same video for every recipient — make it WhatsApp-playable and read its
+  // duration/dimensions once, not per send
+  let videoMeta: VideoMeta = {};
+  if (payload.type === "video" && baseMediaBuffer) {
+    const prepared = await prepareVideoForWhatsApp(baseMediaBuffer);
+    baseMediaBuffer = prepared.media;
+    videoMeta = prepared.meta;
+  }
   if (payload.fileId && !baseMediaBuffer) {
     // Every send would fail the same way — fail the campaign once, clearly
     throw new Error(`Uploaded ${payload.type} file not found: ${path.basename(payload.fileId as string)}`);
@@ -509,7 +515,8 @@ export async function runCampaign(campaignId: string): Promise<void> {
         content = {
           video: baseMediaBuffer ?? { url: payload.url as string },
           caption: cap ? applySuffix(cap, opts) : undefined,
-          mimetype: (payload.mimeType as string | undefined) ?? "video/mp4",
+          // Always MP4: prepareVideoForWhatsApp re-encodes anything else to it
+          mimetype: baseMediaBuffer ? "video/mp4" : (payload.mimeType as string | undefined) ?? "video/mp4",
           ...videoMeta,
         };
         break;
