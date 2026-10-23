@@ -88,11 +88,11 @@ router.post("/:groupId/send", async (req: Request, res: Response) => {
     z.object({ type: z.literal("text"), text: z.string().min(1) }),
     z.object({ type: z.literal("image"), url: z.string().url().optional(), fileId: z.string().optional(), caption: z.string().optional() }),
     z.object({ type: z.literal("document"), url: z.string().url(), filename: z.string(), mimetype: z.string() }),
-    z.object({ type: z.literal("video"), url: z.string().url(), caption: z.string().optional() }),
+    z.object({ type: z.literal("video"), url: z.string().url().optional(), fileId: z.string().optional(), caption: z.string().optional() }),
   ]).parse(req.body);
 
-  if (body.type === "image" && !body.url && !body.fileId) {
-    return res.status(400).json({ error: "Either url or fileId is required for image" });
+  if ((body.type === "image" || body.type === "video") && !body.url && !body.fileId) {
+    return res.status(400).json({ error: `Either url or fileId is required for ${body.type}` });
   }
 
   const jid = resolveGroupJid(req.params.groupId, res);
@@ -116,7 +116,18 @@ router.post("/:groupId/send", async (req: Request, res: Response) => {
       break;
     }
     case "document": content = { document: { url: body.url }, fileName: body.filename, mimetype: body.mimetype }; break;
-    case "video":    content = { video: { url: body.url }, caption: body.caption }; break;
+    case "video": {
+      if (body.fileId) {
+        const filePath = path.resolve(config.uploadsDir, path.basename(body.fileId));
+        if (!fs.existsSync(filePath)) {
+          return res.status(400).json({ error: "File not found" });
+        }
+        content = { video: fs.readFileSync(filePath), caption: body.caption, mimetype: "video/mp4" };
+      } else {
+        content = { video: { url: body.url! }, caption: body.caption };
+      }
+      break;
+    }
   }
 
   // Mark chat as read before sending so the message appears after the bot has "seen" the conversation
