@@ -148,7 +148,7 @@ function buildSections(ctx: CurlCtx): Section[] {
         },
         {
           method: "POST", path: "/instances/:instanceId/messages/send — video (URL)",
-          description: "Send a video from a public URL with an optional caption.",
+          description: "Send a video from a public URL with an optional caption. Botsab downloads it (up to 100 MB), re-encodes it to a WhatsApp-playable MP4 if needed, and adds duration, dimensions and a preview thumbnail - same as a fileId upload.",
           curl: () =>
             `curl -X POST ${b}/instances/${id}/messages/send \\\n  ${h} \\\n  ${j} \\\n  -d '{\n    "to": "919876543210@s.whatsapp.net",\n    "type": "video",\n    "url": "https://example.com/clip.mp4",\n    "caption": "Check this out!"\n  }'`,
         },
