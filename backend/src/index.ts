@@ -9,6 +9,7 @@ import { sessionManager } from "./sessions/manager.js";
 import { errorHandler } from "./utils/errors.js";
 import { logger } from "./utils/logger.js";
 import { requireApiKey } from "./auth/middleware.js";
+import { startUploadsCleanup } from "./services/uploadsCleanup.js";
 
 import authRouter from "./routes/auth.js";
 import keysRouter from "./routes/keys.js";
@@ -131,6 +132,7 @@ app.listen(config.port, async () => {
   await db.migrate.latest();
   await cleanupStaleCampaigns();
   await restoreActiveSessions();
+  startUploadsCleanup();
   logger.info({ port: config.port }, "Botsab API running");
 });
 
