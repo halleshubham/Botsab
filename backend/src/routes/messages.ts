@@ -5,7 +5,7 @@ import { z } from "zod";
 import { requireApiKey, requireInstanceOwner } from "../auth/middleware.js";
 import { sessionManager } from "../sessions/manager.js";
 import { config } from "../config.js";
-import { prepareVideoForWhatsApp } from "../services/videoMeta.js";
+import { downloadVideo, prepareVideoForWhatsApp } from "../services/videoMeta.js";
 
 const router = Router({ mergeParams: true });
 
@@ -55,7 +55,16 @@ async function sendSingleMessage(instanceId: string, body: z.infer<typeof sendSc
         const { media, meta } = await prepareVideoForWhatsApp(filePath);
         content = { video: media, caption: body.caption, mimetype: "video/mp4", ...meta };
       } else {
-        content = { video: { url: body.url! }, caption: body.caption };
+        // Download first so a URL gets the same compatibility check, re-encode
+        // and duration/dimensions as an uploaded file; fall back to letting
+        // Baileys fetch the URL itself if the download isn't possible.
+        const downloaded = await downloadVideo(body.url!);
+        if (downloaded) {
+          const { media, meta } = await prepareVideoForWhatsApp(downloaded);
+          content = { video: media, caption: body.caption, mimetype: "video/mp4", ...meta };
+        } else {
+          content = { video: { url: body.url! }, caption: body.caption };
+        }
       }
       break;
     }

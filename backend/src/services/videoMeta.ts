@@ -3,6 +3,7 @@ import fs from "fs/promises";
 import os from "os";
 import path from "path";
 import { logger } from "../utils/logger.js";
+import { isPrivateUrl } from "../webhooks/dispatcher.js";
 
 export interface VideoMeta {
   seconds?: number;
@@ -144,4 +145,42 @@ export async function prepareVideoForWhatsApp(input: Buffer | string): Promise<{
       await fs.unlink(outPath).catch(() => {});
     }
   });
+}
+
+// Same ceiling as POST /media/upload, so a URL can't pull in more than an upload could
+const MAX_VIDEO_DOWNLOAD_BYTES = 100 * 1024 * 1024;
+
+/**
+ * Downloads a video URL so it can go through prepareVideoForWhatsApp like an
+ * uploaded file. Returns null (callers then hand the raw URL to Baileys, as
+ * before) for private/internal hosts, non-2xx responses, timeouts, or files
+ * over the size cap - the body is streamed and abandoned once it passes the
+ * cap rather than buffered whole.
+ */
+export async function downloadVideo(url: string): Promise<Buffer | null> {
+  if (isPrivateUrl(url)) return null;
+  try {
+    const resp = await fetch(url, { signal: AbortSignal.timeout(120_000) });
+    if (!resp.ok || !resp.body) return null;
+    if (Number(resp.headers.get("content-length")) > MAX_VIDEO_DOWNLOAD_BYTES) return null;
+
+    const chunks: Buffer[] = [];
+    let total = 0;
+    const reader = resp.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_VIDEO_DOWNLOAD_BYTES) {
+        await reader.cancel();
+        logger.warn({ url }, "Video URL exceeds 100 MB, sending by URL instead");
+        return null;
+      }
+      chunks.push(Buffer.from(value));
+    }
+    return Buffer.concat(chunks);
+  } catch (err) {
+    logger.warn({ url, err: err instanceof Error ? err.message : err }, "Video URL download failed, sending by URL instead");
+    return null;
+  }
 }
