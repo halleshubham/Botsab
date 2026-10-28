@@ -10,8 +10,17 @@ const router = Router({ mergeParams: true });
 router.use(requireApiKey);
 router.use(requireInstanceOwner);
 
+// Group campaigns only (ignored for contact lists): mentionAll is WhatsApp's
+// native @all, tagAll mentions every member of each group individually
+const mentionFields = { mentionAll: z.boolean().optional(), tagAll: z.boolean().optional() };
+
 const messagePayloadSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("text"), text: z.string().min(1).max(4096) }),
+  z.object({
+    type: z.literal("text"),
+    text: z.string().min(1).max(4096),
+    variants: z.array(z.string().max(4096)).max(20).optional(),
+    ...mentionFields,
+  }),
   z.object({
     type: z.literal("image"),
     url: z.string().url().optional(),
@@ -19,6 +28,7 @@ const messagePayloadSchema = z.discriminatedUnion("type", [
     mimeType: z.string().optional(),
     caption: z.string().max(1024).optional(),
     captionVariants: z.array(z.string().max(1024)).max(20).optional(),
+    ...mentionFields,
   }),
   z.object({
     type: z.literal("document"),
@@ -33,6 +43,7 @@ const messagePayloadSchema = z.discriminatedUnion("type", [
     mimeType: z.string().optional(),
     caption: z.string().max(1024).optional(),
     captionVariants: z.array(z.string().max(1024)).max(20).optional(),
+    ...mentionFields,
   }),
 ]);
 

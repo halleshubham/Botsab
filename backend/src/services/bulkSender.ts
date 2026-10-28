@@ -8,6 +8,7 @@ import { logger } from "../utils/logger.js";
 import { config } from "../config.js";
 import { isPrivateUrl } from "../webhooks/dispatcher.js";
 import { prepareVideoForWhatsApp, type VideoMeta } from "./videoMeta.js";
+import { buildMentions } from "./mentions.js";
 
 export interface BulkOptions {
   minDelayMs: number;
@@ -523,6 +524,10 @@ export async function runCampaign(campaignId: string): Promise<void> {
       }
       default:
         content = { text: "" };
+    }
+
+    if (campaign.list_type === "group" && payload.type !== "document") {
+      Object.assign(content, await buildMentions(currentMeta.socket, target, payload));
     }
 
     try {

@@ -6,6 +6,7 @@ import type { GroupMetadata } from "@whiskeysockets/baileys";
 import { requireApiKey, requireInstanceOwner } from "../auth/middleware.js";
 import { sessionManager } from "../sessions/manager.js";
 import { config } from "../config.js";
+import { buildMentions } from "../services/mentions.js";
 import { downloadVideo, prepareVideoForWhatsApp } from "../services/videoMeta.js";
 
 const router = Router({ mergeParams: true });
@@ -85,11 +86,13 @@ router.post("/", async (req: Request, res: Response) => {
 });
 
 router.post("/:groupId/send", async (req: Request, res: Response) => {
+  // mentionAll: WhatsApp's native @all; tagAll: mention every member individually
+  const mentionFields = { mentionAll: z.boolean().optional(), tagAll: z.boolean().optional() };
   const body = z.discriminatedUnion("type", [
-    z.object({ type: z.literal("text"), text: z.string().min(1) }),
-    z.object({ type: z.literal("image"), url: z.string().url().optional(), fileId: z.string().optional(), caption: z.string().optional() }),
+    z.object({ type: z.literal("text"), text: z.string().min(1), ...mentionFields }),
+    z.object({ type: z.literal("image"), url: z.string().url().optional(), fileId: z.string().optional(), caption: z.string().optional(), ...mentionFields }),
     z.object({ type: z.literal("document"), url: z.string().url(), filename: z.string(), mimetype: z.string() }),
-    z.object({ type: z.literal("video"), url: z.string().url().optional(), fileId: z.string().optional(), caption: z.string().optional() }),
+    z.object({ type: z.literal("video"), url: z.string().url().optional(), fileId: z.string().optional(), caption: z.string().optional(), ...mentionFields }),
   ]).parse(req.body);
 
   if ((body.type === "image" || body.type === "video") && !body.url && !body.fileId) {
@@ -139,6 +142,10 @@ router.post("/:groupId/send", async (req: Request, res: Response) => {
       }
       break;
     }
+  }
+
+  if (body.type !== "document") {
+    Object.assign(content, await buildMentions(meta.socket, jid, body));
   }
 
   // Mark chat as read before sending so the message appears after the bot has "seen" the conversation

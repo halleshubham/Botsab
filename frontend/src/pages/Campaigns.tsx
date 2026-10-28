@@ -118,6 +118,8 @@ export function Campaigns() {
   const [imgCaption, setImgCaption] = useState("");
   const [showCaptionVariants, setShowCaptionVariants] = useState(false);
   const [imgCaptionVariants, setImgCaptionVariants] = useState("");
+  const [mentionAll, setMentionAll] = useState(false);
+  const [tagAll, setTagAll] = useState(false);
   const [showOpts, setShowOpts] = useState(false);
   const [opts, setOpts] = useState<BulkCampaignOptions>({ ...DEFAULT_OPTS });
   const [creating, setCreating] = useState(false);
@@ -221,6 +223,10 @@ export function Campaigns() {
           ? [msgText.trim(), ...msgVariants.split("\n").map((s) => s.trim()).filter(Boolean)]
           : undefined;
         message = { type: "text", text: msgText.trim(), ...(variants ? { variants } : {}) };
+      }
+      if (listType === "group") {
+        if (mentionAll) message.mentionAll = true;
+        if (tagAll) message.tagAll = true;
       }
       const { data } = await createCampaign(instanceId, {
         list_type: listType,
@@ -486,6 +492,25 @@ export function Campaigns() {
                   )}
                 </div>
               </>
+            )}
+
+            {/* Group mentions */}
+            {listType === "group" && (
+              <div className="space-y-1.5">
+                <Label>Group mentions</Label>
+                <label className="flex items-start gap-2 text-sm cursor-pointer select-none">
+                  <input type="checkbox" className="mt-0.5" checked={mentionAll} onChange={(e) => setMentionAll(e.target.checked)} />
+                  <span>
+                    Mention @all <span className="text-muted-foreground">(WhatsApp's native @all — include "@all" in your message; older WhatsApp versions show plain text)</span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 text-sm cursor-pointer select-none">
+                  <input type="checkbox" className="mt-0.5" checked={tagAll} onChange={(e) => setTagAll(e.target.checked)} />
+                  <span>
+                    Tag every member <span className="text-muted-foreground">(notifies each member individually on every WhatsApp version)</span>
+                  </span>
+                </label>
+              </div>
             )}
 
             {/* Advanced options toggle */}

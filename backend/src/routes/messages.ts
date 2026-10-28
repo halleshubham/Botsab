@@ -5,6 +5,7 @@ import { z } from "zod";
 import { requireApiKey, requireInstanceOwner } from "../auth/middleware.js";
 import { sessionManager } from "../sessions/manager.js";
 import { config } from "../config.js";
+import { buildMentions } from "../services/mentions.js";
 import { downloadVideo, prepareVideoForWhatsApp } from "../services/videoMeta.js";
 
 const router = Router({ mergeParams: true });
@@ -14,12 +15,16 @@ router.use(requireInstanceOwner);
 
 const jidSchema = z.string().regex(/^[^@]+@(s\.whatsapp\.net|g\.us)$/, "Invalid JID format");
 
+// Group-only mention options (ignored for individual chats): mentionAll is
+// WhatsApp's native @all, tagAll mentions every member individually
+const mentionFields = { mentionAll: z.boolean().optional(), tagAll: z.boolean().optional() };
+
 const sendSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("text"), to: jidSchema, text: z.string().min(1) }),
-  z.object({ type: z.literal("image"), to: jidSchema, url: z.string().url().optional(), fileId: z.string().optional(), caption: z.string().optional() }),
+  z.object({ type: z.literal("text"), to: jidSchema, text: z.string().min(1), ...mentionFields }),
+  z.object({ type: z.literal("image"), to: jidSchema, url: z.string().url().optional(), fileId: z.string().optional(), caption: z.string().optional(), ...mentionFields }),
   z.object({ type: z.literal("document"), to: jidSchema, url: z.string().url(), filename: z.string(), mimetype: z.string() }),
   z.object({ type: z.literal("audio"), to: jidSchema, url: z.string().url(), ptt: z.boolean().optional() }),
-  z.object({ type: z.literal("video"), to: jidSchema, url: z.string().url().optional(), fileId: z.string().optional(), caption: z.string().optional() }),
+  z.object({ type: z.literal("video"), to: jidSchema, url: z.string().url().optional(), fileId: z.string().optional(), caption: z.string().optional(), ...mentionFields }),
 ]);
 
 async function sendSingleMessage(instanceId: string, body: z.infer<typeof sendSchema>) {
@@ -68,6 +73,10 @@ async function sendSingleMessage(instanceId: string, body: z.infer<typeof sendSc
       }
       break;
     }
+  }
+
+  if (body.type === "text" || body.type === "image" || body.type === "video") {
+    Object.assign(content, await buildMentions(meta.socket, body.to, body));
   }
 
   // Mark chat as read before sending

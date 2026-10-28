@@ -217,6 +217,12 @@ function buildSections(ctx: CurlCtx): Section[] {
             `curl -X POST ${b}/instances/${id}/groups/${gid}/send \\\n  ${h} \\\n  ${j} \\\n  -d '{\n    "type": "video",\n    "fileId": "uuid-returned-by-upload.mp4",\n    "caption": "Check this out!"\n  }'`,
         },
         {
+          method: "POST", path: "/instances/:instanceId/groups/:groupId/send — mention everyone",
+          description: "Works on text, image and video sends to a group (also on /messages/send to a @g.us JID). \"mentionAll\": WhatsApp's native @all - put \"@all\" in the text; older WhatsApp versions show it as plain text. \"tagAll\": mentions every member individually, so each one is notified on any WhatsApp version. Use either or both.",
+          curl: () =>
+            `curl -X POST ${b}/instances/${id}/groups/${gid}/send \\\n  ${h} \\\n  ${j} \\\n  -d '{\n    "type": "text",\n    "text": "@all Meeting moved to 6pm",\n    "mentionAll": true,\n    "tagAll": true\n  }'`,
+        },
+        {
           method: "POST", path: "/instances/:instanceId/groups",
           description: "Create a new group with given participants.",
           curl: () =>
@@ -289,6 +295,12 @@ function buildSections(ctx: CurlCtx): Section[] {
           description: "Video campaign using a fileId from POST /media/upload (or \"url\"). MP4 with H.264 plays on every WhatsApp client; duration, dimensions and a preview thumbnail are added automatically.",
           curl: () =>
             `curl -X POST ${b}/instances/${id}/campaigns \\\n  ${h} \\\n  ${j} \\\n  -d '{\n    "list_type": "contact",\n    "list_id": "LIST_ID",\n    "message": {\n      "type": "video",\n      "fileId": "uuid-returned-by-upload.mp4",\n      "caption": "Watch our new reel",\n      "captionVariants": ["Our new reel is out!"]\n    }\n  }'`,
+        },
+        {
+          method: "POST", path: "/instances/:instanceId/campaigns — group mentions",
+          description: "For group lists, \"mentionAll\" (WhatsApp's native @all; include \"@all\" in the text or caption) and \"tagAll\" (mention every member individually) apply to every group in the campaign. Works with text, image and video; ignored for contact lists.",
+          curl: () =>
+            `curl -X POST ${b}/instances/${id}/campaigns \\\n  ${h} \\\n  ${j} \\\n  -d '{\n    "list_type": "group",\n    "list_id": "LIST_ID",\n    "message": {\n      "type": "text",\n      "text": "@all New update is live!",\n      "mentionAll": true,\n      "tagAll": true\n    }\n  }'`,
         },
         {
           method: "POST", path: "/instances/:instanceId/campaigns — custom pacing",
