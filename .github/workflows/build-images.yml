@@ -4,7 +4,15 @@ name: "Build and Push Images"
 # ghcr.io/halleshubham/botsab-backend and ghcr.io/halleshubham/botsab-frontend,
 # for Coolify to pull via docker-compose.prod.yml instead of building from
 # source on the deploy host.
+#
+# Runs automatically once CI passes on a push to master (so a merge only
+# needs a redeploy in Coolify), and can still be run by hand with an
+# optional tag.
 on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [master]
   workflow_dispatch:
     inputs:
       tag:
@@ -15,26 +23,59 @@ permissions:
   contents: read
   packages: write
 
+# Queue builds rather than run them side by side - two pushes to the same tag
+# at once could leave latest on the older commit
+concurrency:
+  group: build-images
+  cancel-in-progress: false
+
 jobs:
   build-and-push:
+    # Automatic runs: only after CI succeeded for a push to master (not a PR)
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # workflow_run otherwise checks out master's current tip, which may
+          # be newer than the commit CI actually tested
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
-      - name: Compute tag
+      - name: Compute tags
         id: vars
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+          EVENT: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          if [ -n "${{ inputs.tag }}" ]; then
-            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT" = "workflow_run" ]; then
+            # If master moved on while this commit's CI ran, the newer commit's
+            # own CI will publish latest - don't overwrite it with older code
+            current=$(git ls-remote origin refs/heads/master | cut -f1)
+            if [ "$current" != "$HEAD_SHA" ]; then
+              echo "master is now at $current, newer than $HEAD_SHA - skipping"
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            short=${HEAD_SHA:0:7}
+            # latest for Coolify, plus an immutable sha tag to roll back to
+            echo "backend=ghcr.io/halleshubham/botsab-backend:latest,ghcr.io/halleshubham/botsab-backend:sha-$short" >> "$GITHUB_OUTPUT"
+            echo "frontend=ghcr.io/halleshubham/botsab-frontend:latest,ghcr.io/halleshubham/botsab-frontend:sha-$short" >> "$GITHUB_OUTPUT"
           else
-            echo "tag=latest" >> "$GITHUB_OUTPUT"
+            tag=${INPUT_TAG:-latest}
+            echo "backend=ghcr.io/halleshubham/botsab-backend:$tag" >> "$GITHUB_OUTPUT"
+            echo "frontend=ghcr.io/halleshubham/botsab-frontend:$tag" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Set up Docker Buildx
+        if: steps.vars.outputs.skip != 'true'
         uses: docker/setup-buildx-action@v3
 
       - name: Login to ghcr
+        if: steps.vars.outputs.skip != 'true'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -42,17 +83,19 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and push backend image
+        if: steps.vars.outputs.skip != 'true'
         uses: docker/build-push-action@v6
         with:
           context: ./backend
           file: ./backend/Dockerfile
           push: true
-          tags: ghcr.io/halleshubham/botsab-backend:${{ steps.vars.outputs.tag }}
+          tags: ${{ steps.vars.outputs.backend }}
 
       - name: Build and push frontend image
+        if: steps.vars.outputs.skip != 'true'
         uses: docker/build-push-action@v6
         with:
           context: ./frontend
           file: ./frontend/Dockerfile
           push: true
-          tags: ghcr.io/halleshubham/botsab-frontend:${{ steps.vars.outputs.tag }}
+          tags: ${{ steps.vars.outputs.frontend }}
