@@ -48,8 +48,13 @@ jobs:
           cache-dependency-path: backend/package-lock.json
 
       # Video tests generate and inspect real files with ffmpeg/ffprobe
+      # Skip the man-db index rebuild and recommended packages: together they
+      # made this step take ~10 minutes on ubuntu-24.04 runners
       - name: Install ffmpeg
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+        run: |
+          sudo rm -f /var/lib/man-db/auto-update
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends ffmpeg
 
       - run: npm ci --legacy-peer-deps
       - run: npm run typecheck
