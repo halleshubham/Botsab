@@ -15,6 +15,7 @@ import type { Agent } from "https";
 import { SocksProxyAgent } from "socks-proxy-agent";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import { db } from "../db/index.js";
+import { enrichMessage, normalizeJid } from "../services/incoming.js";
 import { webhookDispatcher } from "../webhooks/dispatcher.js";
 import { config } from "../config.js";
 import { logger } from "../utils/logger.js";
@@ -203,58 +204,8 @@ class SessionManager {
             ...(msg.key.participant ? { participant: msg.key.participant } : {}),
           });
         }
-        const isGroup = remoteJid.endsWith("@g.us");
-        const senderId = isGroup ? (msg.key.participant ?? "") : remoteJid;
-
-        // Strip device suffix while keeping the domain: "919607459969:15@s.whatsapp.net" → "919607459969@s.whatsapp.net"
-        const normalizeJid = (jid: string) => {
-          const atIdx = jid.lastIndexOf("@");
-          const domain = atIdx !== -1 ? jid.slice(atIdx) : "@s.whatsapp.net";
-          const user = (atIdx !== -1 ? jid.slice(0, atIdx) : jid).split(":")[0];
-          return user + domain;
-        };
-
-        const rawBotJid = socket.user?.id ?? "";
-        const normalizedBotJid = normalizeJid(rawBotJid);
-        // Bot may also appear as a @lid JID in newer WhatsApp groups
-        const normalizedBotLid = socket.user?.lid ? normalizeJid(socket.user.lid) : null;
-
-        const text =
-          msg.message?.conversation ??
-          msg.message?.extendedTextMessage?.text ??
-          msg.message?.imageMessage?.caption ??
-          msg.message?.videoMessage?.caption ??
-          null;
-
-        // mentionedJid lives inside contextInfo of whichever message type was sent
-        const m = msg.message ?? {};
-        const rawMentions: string[] = (
-          m.extendedTextMessage?.contextInfo?.mentionedJid ??
-          m.imageMessage?.contextInfo?.mentionedJid ??
-          m.videoMessage?.contextInfo?.mentionedJid ??
-          m.documentMessage?.contextInfo?.mentionedJid ??
-          m.audioMessage?.contextInfo?.mentionedJid ??
-          m.stickerMessage?.contextInfo?.mentionedJid ??
-          m.buttonsMessage?.contextInfo?.mentionedJid ??
-          m.listMessage?.contextInfo?.mentionedJid ??
-          []
-        ) as string[];
-        const mentions: string[] = rawMentions.map(normalizeJid);
-
-        const isMentioned =
-          mentions.includes(normalizedBotJid) ||
-          (normalizedBotLid !== null && mentions.includes(normalizedBotLid));
-
-        const enriched = {
-          id: msg.key.id,
-          remoteJid,
-          isGroup,
-          groupId: isGroup ? remoteJid : null,
-          senderId,
-          text,
-          mentions,
-          isMentioned,
-        };
+        const enriched = enrichMessage(msg, { jid: socket.user?.id ?? "", lid: socket.user?.lid });
+        const { text, senderId } = enriched;
 
         // Opt-out detection: record STOP/unsubscribe replies so bulk campaigns skip this contact
         if (text && OPT_OUT_PATTERNS.some((p) => p.test(text))) {
