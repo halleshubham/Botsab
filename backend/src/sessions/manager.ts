@@ -16,6 +16,7 @@ import { SocksProxyAgent } from "socks-proxy-agent";
 import { HttpsProxyAgent } from "https-proxy-agent";
 import { db } from "../db/index.js";
 import { enrichMessage, normalizeJid } from "../services/incoming.js";
+import { messageBuffer, toContextMessage } from "../services/messageBuffer.js";
 import { webhookDispatcher } from "../webhooks/dispatcher.js";
 import { config } from "../config.js";
 import { logger } from "../utils/logger.js";
@@ -188,6 +189,16 @@ class SessionManager {
     });
 
     socket.ev.on("messages.upsert", async ({ messages, type }) => {
+      // Remember recent messages - received and sent, including our own
+      // replies - so a tag can be handed over with the conversation around it
+      const botIds = { jid: socket.user?.id ?? "", lid: socket.user?.lid };
+      for (const msg of messages) {
+        const chat = msg.key.remoteJid;
+        if (!chat || chat === "status@broadcast") continue;
+        const item = toContextMessage(msg, botIds);
+        if (item) messageBuffer.add(instanceId, chat, item);
+      }
+
       if (type !== "notify") return;
       for (const msg of messages) {
         if (msg.key.fromMe) continue;
@@ -204,8 +215,13 @@ class SessionManager {
             ...(msg.key.participant ? { participant: msg.key.participant } : {}),
           });
         }
-        const enriched = enrichMessage(msg, { jid: socket.user?.id ?? "", lid: socket.user?.lid });
+        const enriched: ReturnType<typeof enrichMessage> & { context?: { before: unknown[] } } = enrichMessage(msg, botIds);
         const { text, senderId } = enriched;
+        // A tag usually refers to what was just said or shared: include the 5
+        // messages before it (later ones: GET /instances/:id/messages/context)
+        if (enriched.isMentioned && msg.key.id) {
+          enriched.context = { before: messageBuffer.around(instanceId, remoteJid, msg.key.id, 5, 0)?.before ?? [] };
+        }
 
         // Opt-out detection: record STOP/unsubscribe replies so bulk campaigns skip this contact
         if (text && OPT_OUT_PATTERNS.some((p) => p.test(text))) {
@@ -307,6 +323,7 @@ class SessionManager {
     this.sessions.delete(instanceId);
     this.lastMsgKeys.delete(instanceId);
     this.groupMetaCache.delete(instanceId);
+    messageBuffer.clear(instanceId);
     await this.syncStatus(instanceId, "disconnected");
     if (purge) {
       await fs.rm(meta.sessionsDir, { recursive: true, force: true });

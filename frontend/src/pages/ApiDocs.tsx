@@ -189,6 +189,12 @@ function buildSections(ctx: CurlCtx): Section[] {
             `curl -X POST ${b}/instances/${id}/messages/media \\\n  ${h} \\\n  ${j} \\\n  -o file.pdf \\\n  -d '{\n    "message": {\n      "key": { "remoteJid": "120363XXXXXXXXXX@g.us", "id": "3EB0XXXXXXXX", "participant": "919876543210@s.whatsapp.net" },\n      "message": { "documentMessage": { "url": "https://mmg.whatsapp.net/...", "mediaKey": "...", "directPath": "/v/t62...", "mimetype": "application/pdf", "fileName": "file.pdf" } }\n    }\n  }'`,
         },
         {
+          method: "GET", path: "/instances/:instanceId/messages/context",
+          description: "The conversation around a message, typically one that tagged the bot: up to \"before\" earlier messages (default 5), the message, and the messages after it so far (\"after\", default all). Each has sender, phone, name, time, text, mentions, media and replyTo; media messages include \"message\" to pass to /messages/media. Served from an in-memory buffer of the last 50 messages per chat for 24 h (cleared on restart); 404 if the message is no longer in it. Tip: when tagged, wait a minute or two for follow-up messages before calling this.",
+          curl: () =>
+            `curl "${b}/instances/${id}/messages/context?chat=120363XXXXXXXXXX@g.us&messageId=3EB0XXXXXXXX&before=5" \\\n  ${h}`,
+        },
+        {
           method: "POST", path: "/instances/:instanceId/messages/read",
           description: "Mark one or more messages as read (send read receipts).",
           curl: () =>
@@ -655,6 +661,9 @@ Supported events:
                          { id, participant, participantPhone, text, media,
                            message }  ← POST message to /messages/media
                            to download the quoted file
+                       context: { before: [up to 5 earlier messages] }
+                         - only when isMentioned; later messages via
+                         GET /instances/:id/messages/context
   message.receipt  → data.updates
   group.update     → data.updates
   contact.update   → data.updates`}</pre>

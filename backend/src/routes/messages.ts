@@ -10,6 +10,7 @@ import { downloadVideo, prepareVideoForWhatsApp } from "../services/videoMeta.js
 import { downloadMediaMessage, type proto } from "@whiskeysockets/baileys";
 import pino from "pino";
 import { assertDownloadableMedia, describeMedia, quotedOption } from "../services/incoming.js";
+import { messageBuffer, MAX_MESSAGES_PER_CHAT } from "../services/messageBuffer.js";
 
 const router = Router({ mergeParams: true });
 
@@ -212,6 +213,25 @@ router.post("/media", async (req: Request, res: Response) => {
       error: `Could not download media: ${err instanceof Error ? err.message : "unknown error"}. It may have expired on WhatsApp's servers.`,
     });
   }
+});
+
+// The conversation around a message (typically one that tagged the bot):
+// up to `before` earlier messages, the message, and the messages after it so
+// far. Served from Botsab's short-lived in-memory buffer (last 50 per chat,
+// 24 h, cleared on restart) - nothing is fetched from WhatsApp.
+router.get("/context", async (req: Request, res: Response) => {
+  const q = z.object({
+    chat: jidSchema,
+    messageId: z.string().min(1),
+    before: z.coerce.number().int().min(0).max(MAX_MESSAGES_PER_CHAT).default(5),
+    after: z.coerce.number().int().min(0).max(MAX_MESSAGES_PER_CHAT).default(MAX_MESSAGES_PER_CHAT),
+  }).parse(req.query);
+
+  const ctx = messageBuffer.around(req.params.instanceId, q.chat, q.messageId, q.before, q.after);
+  if (!ctx) {
+    return res.status(404).json({ error: "Message not in the recent-message buffer (older than 24 h, or Botsab restarted since)" });
+  }
+  res.json(ctx);
 });
 
 router.post("/read", async (req: Request, res: Response) => {
