@@ -171,6 +171,30 @@ function buildSections(ctx: CurlCtx): Section[] {
             `curl -X POST ${b}/instances/${id}/messages/sendBulk \\\n  ${h} \\\n  ${j} \\\n  -d '{\n    "messages": [\n      {"to":"919876543210@s.whatsapp.net","type":"text","text":"First"},\n      {"to":"919876543211@s.whatsapp.net","type":"text","text":"Second"}\n    ],\n    "delayMs": 1000\n  }'`,
         },
         {
+          method: "POST", path: "/instances/:instanceId/messages/send — reply (quoted)",
+          description: "Reply to a specific message so it shows as a quote. \"id\" and \"participant\" come from the message.received webhook (data.enriched.id / data.enriched.senderId); pass \"message\" (data.message.message) for the quote preview. Works on every message type and on /groups/:groupId/send.",
+          curl: () =>
+            `curl -X POST ${b}/instances/${id}/messages/send \\\n  ${h} \\\n  ${j} \\\n  -d '{\n    "to": "120363XXXXXXXXXX@g.us",\n    "type": "text",\n    "text": "Got it - working on it",\n    "quoted": {\n      "id": "3EB0XXXXXXXX",\n      "participant": "919876543210@s.whatsapp.net",\n      "message": { "conversation": "the original text" }\n    }\n  }'`,
+        },
+        {
+          method: "POST", path: "/instances/:instanceId/messages/react",
+          description: "React to a message with an emoji; an empty \"emoji\" removes the reaction. Useful for progress, e.g. 👀 when a request is picked up and ✅ / ❌ when it is done.",
+          curl: () =>
+            `curl -X POST ${b}/instances/${id}/messages/react \\\n  ${h} \\\n  ${j} \\\n  -d '{\n    "to": "120363XXXXXXXXXX@g.us",\n    "messageId": "3EB0XXXXXXXX",\n    "participant": "919876543210@s.whatsapp.net",\n    "emoji": "👀"\n  }'`,
+        },
+        {
+          method: "POST", path: "/instances/:instanceId/messages/media",
+          description: "Download the file from a received message: send back data.message from the message.received webhook, or data.enriched.quoted.message for the file someone replied to. Returns the decrypted bytes with Content-Type and Content-Disposition (file name); nothing is stored. Only WhatsApp media servers are contacted; max 100 MB; very old media may have expired.",
+          curl: () =>
+            `curl -X POST ${b}/instances/${id}/messages/media \\\n  ${h} \\\n  ${j} \\\n  -o file.pdf \\\n  -d '{\n    "message": {\n      "key": { "remoteJid": "120363XXXXXXXXXX@g.us", "id": "3EB0XXXXXXXX", "participant": "919876543210@s.whatsapp.net" },\n      "message": { "documentMessage": { "url": "https://mmg.whatsapp.net/...", "mediaKey": "...", "directPath": "/v/t62...", "mimetype": "application/pdf", "fileName": "file.pdf" } }\n    }\n  }'`,
+        },
+        {
+          method: "GET", path: "/instances/:instanceId/messages/context",
+          description: "The conversation around a message, typically one that tagged the bot: up to \"before\" earlier messages (default 5), the message, and the messages after it so far (\"after\", default all). Each has sender, phone, name, time, text, mentions, media and replyTo; media messages include \"message\" to pass to /messages/media. Served from an in-memory buffer of the last 50 messages per chat for 24 h (cleared on restart); 404 if the message is no longer in it. Tip: when tagged, wait a minute or two for follow-up messages before calling this.",
+          curl: () =>
+            `curl "${b}/instances/${id}/messages/context?chat=120363XXXXXXXXXX@g.us&messageId=3EB0XXXXXXXX&before=5" \\\n  ${h}`,
+        },
+        {
           method: "POST", path: "/instances/:instanceId/messages/read",
           description: "Mark one or more messages as read (send read receipts).",
           curl: () =>
@@ -625,6 +649,21 @@ Supported events:
   connection.open  → data.phone
   connection.close → data.statusCode, data.shouldReconnect
   message.received → data.message (full Baileys message object)
+                     data.enriched:
+                       id, remoteJid, isGroup, groupId, timestamp
+                       senderId, senderPhone (digits, even when WhatsApp
+                         lists the sender by LID), senderName
+                       text (also document captions), mentions,
+                       isMentioned (true when this number was tagged)
+                       media: { type, mimetype, fileName, size, caption }
+                         or null
+                       quoted: the message being replied to, or null -
+                         { id, participant, participantPhone, text, media,
+                           message }  ← POST message to /messages/media
+                           to download the quoted file
+                       context: { before: [up to 5 earlier messages] }
+                         - only when isMentioned; later messages via
+                         GET /instances/:id/messages/context
   message.receipt  → data.updates
   group.update     → data.updates
   contact.update   → data.updates`}</pre>

@@ -7,6 +7,7 @@ import { requireApiKey, requireInstanceOwner } from "../auth/middleware.js";
 import { sessionManager } from "../sessions/manager.js";
 import { config } from "../config.js";
 import { buildMentions } from "../services/mentions.js";
+import { quotedOption } from "../services/incoming.js";
 import { downloadVideo, prepareVideoForWhatsApp } from "../services/videoMeta.js";
 
 const router = Router({ mergeParams: true });
@@ -88,11 +89,20 @@ router.post("/", async (req: Request, res: Response) => {
 router.post("/:groupId/send", async (req: Request, res: Response) => {
   // mentionAll: WhatsApp's native @all; tagAll: mention every member individually
   const mentionFields = { mentionAll: z.boolean().optional(), tagAll: z.boolean().optional() };
+  // quoted: reply to a specific message (id + sender from the webhook; message for the quote preview)
+  const replyFields = {
+    quoted: z.object({
+      id: z.string().min(1),
+      participant: z.string().optional(),
+      fromMe: z.boolean().optional(),
+      message: z.record(z.any()).optional(),
+    }).optional(),
+  };
   const body = z.discriminatedUnion("type", [
-    z.object({ type: z.literal("text"), text: z.string().min(1), ...mentionFields }),
-    z.object({ type: z.literal("image"), url: z.string().url().optional(), fileId: z.string().optional(), caption: z.string().optional(), ...mentionFields }),
-    z.object({ type: z.literal("document"), url: z.string().url(), filename: z.string(), mimetype: z.string() }),
-    z.object({ type: z.literal("video"), url: z.string().url().optional(), fileId: z.string().optional(), caption: z.string().optional(), ...mentionFields }),
+    z.object({ type: z.literal("text"), text: z.string().min(1), ...mentionFields, ...replyFields }),
+    z.object({ type: z.literal("image"), url: z.string().url().optional(), fileId: z.string().optional(), caption: z.string().optional(), ...mentionFields, ...replyFields }),
+    z.object({ type: z.literal("document"), url: z.string().url(), filename: z.string(), mimetype: z.string(), ...replyFields }),
+    z.object({ type: z.literal("video"), url: z.string().url().optional(), fileId: z.string().optional(), caption: z.string().optional(), ...mentionFields, ...replyFields }),
   ]).parse(req.body);
 
   if ((body.type === "image" || body.type === "video") && !body.url && !body.fileId) {
@@ -156,7 +166,11 @@ router.post("/:groupId/send", async (req: Request, res: Response) => {
   let lastErr: unknown;
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const result = await meta.socket.sendMessage(jid, content as Parameters<typeof meta.socket.sendMessage>[1]);
+      const result = await meta.socket.sendMessage(
+        jid,
+        content as Parameters<typeof meta.socket.sendMessage>[1],
+        quotedOption(jid, body.quoted as Parameters<typeof quotedOption>[1])
+      );
       const ts = result?.messageTimestamp;
       const timestamp = !ts ? null : typeof ts === "number" ? ts : Number(ts.toString());
       return res.json({ messageId: result?.key?.id, groupId: jid, status: "sent", timestamp });
