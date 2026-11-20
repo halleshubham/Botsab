@@ -130,7 +130,7 @@ function buildSections(ctx: CurlCtx): Section[] {
       endpoints: [
         {
           method: "POST", path: "/instances/:instanceId/messages/send — text",
-          description: "Send a text message. JID format: {phone}@s.whatsapp.net for DMs, {id}@g.us for groups.",
+          description: "Send a text message. JID format: {phone}@s.whatsapp.net or {lid}@lid for DMs (use the remoteJid from the webhook as-is), {id}@g.us for groups.",
           curl: () =>
             `curl -X POST ${b}/instances/${id}/messages/send \\\n  ${h} \\\n  ${j} \\\n  -d '{\n    "to": "919876543210@s.whatsapp.net",\n    "type": "text",\n    "text": "Hello from Botsab!"\n  }'`,
         },
