@@ -7,7 +7,7 @@ import { listInstances, listKeys, listGroups, type ApiKey, type Group } from "@/
 // ─── types ───────────────────────────────────────────────────────────────────
 
 interface Endpoint {
-  method: "GET" | "POST" | "PUT" | "DELETE";
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   path: string;
   description: string;
   curl: (ctx: CurlCtx) => string;
@@ -364,13 +364,40 @@ function buildSections(ctx: CurlCtx): Section[] {
       title: "Webhooks",
       endpoints: [
         {
-          method: "GET", path: "/instances/:instanceId/webhook",
-          description: "Get the current webhook configuration for an instance.",
-          curl: () => `curl ${b}/instances/${id}/webhook \\\n  ${h}`,
+          method: "GET", path: "/instances/:instanceId/webhooks",
+          description: "List the instance's webhooks (up to 10), each with its events, filters, on/off state and whether a signing secret is set.",
+          curl: () => `curl ${b}/instances/${id}/webhooks \\\n  ${h}`,
+        },
+        {
+          method: "POST", path: "/instances/:instanceId/webhooks",
+          description: "Add a webhook. events: [] = all events (default [\"message.received\"]). filters apply to message.received only, and every condition must match: chatTypes all | groups | direct; groups = only these group JIDs; senders = only these phone numbers (country code, any format) or LID numbers; mentionsOnly = only messages that tag this number. Each delivery carries webhookId; with a secret it is signed in X-Webhook-Signature (HMAC-SHA256 of the body).",
+          curl: () =>
+            `curl -X POST ${b}/instances/${id}/webhooks \\\n  ${h} \\\n  ${j} \\\n  -d '{\n    "name": "n8n agent",\n    "url": "https://yourapp.com/webhook",\n    "events": ["message.received"],\n    "secret": "mysigningsecret",\n    "filters": {\n      "chatTypes": "groups",\n      "groups": ["120363000000000000@g.us"],\n      "senders": ["919876543210"],\n      "mentionsOnly": true\n    }\n  }'`,
+        },
+        {
+          method: "PATCH", path: "/instances/:instanceId/webhooks/:webhookId",
+          description: "Change any of name, url, events, secret, filters (replaced as a whole) or enabled.",
+          curl: () =>
+            `curl -X PATCH ${b}/instances/${id}/webhooks/WEBHOOK_ID \\\n  ${h} \\\n  ${j} \\\n  -d '{ "enabled": false }'`,
+        },
+        {
+          method: "DELETE", path: "/instances/:instanceId/webhooks/:webhookId",
+          description: "Delete a webhook. DELETE …/:webhookId/secret removes only its signing secret.",
+          curl: () => `curl -X DELETE ${b}/instances/${id}/webhooks/WEBHOOK_ID \\\n  ${h}`,
+        },
+        {
+          method: "POST", path: "/instances/:instanceId/webhooks/:webhookId/test",
+          description: "Send a test payload to one webhook and report the response.",
+          curl: () => `curl -X POST ${b}/instances/${id}/webhooks/WEBHOOK_ID/test \\\n  ${h}`,
+        },
+        {
+          method: "GET", path: "/instances/:instanceId/webhooks/logs",
+          description: "Deliveries of the last 3 hours for all webhooks (?webhookId= for one).",
+          curl: () => `curl ${b}/instances/${id}/webhooks/logs \\\n  ${h}`,
         },
         {
           method: "PUT", path: "/instances/:instanceId/webhook",
-          description: "Set the webhook URL, subscribed events, and optional HMAC signing secret.",
+          description: "Original single-webhook API, kept for existing integrations: GET/PUT …/webhook read and set the instance's first webhook (url null deletes it).",
           curl: () =>
             `curl -X PUT ${b}/instances/${id}/webhook \\\n  ${h} \\\n  ${j} \\\n  -d '{\n    "url": "https://yourapp.com/webhook",\n    "events": ["message.received","connection.open","qr"],\n    "secret": "mysigningsecret"\n  }'`,
         },
@@ -385,6 +412,7 @@ const METHOD_COLOR: Record<string, string> = {
   GET:    "bg-blue-100 text-blue-800",
   POST:   "bg-green-100 text-green-800",
   PUT:    "bg-yellow-100 text-yellow-800",
+  PATCH:  "bg-orange-100 text-orange-800",
   DELETE: "bg-red-100 text-red-800",
 };
 

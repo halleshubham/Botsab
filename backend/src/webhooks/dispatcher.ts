@@ -4,88 +4,67 @@ import { db } from "../db/index.js";
 import { WebhookEventType } from "./events.js";
 import { logger } from "../utils/logger.js";
 import { config } from "../config.js";
+import { matchesFilters, parseFilters } from "./filters.js";
+import { isPrivateUrl, logDelivery, type WebhookRow } from "./store.js";
 
-const PRIVATE_HOST_RE = /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.|::1$|fc00:|fd)/;
-
-export function isPrivateUrl(url: string): boolean {
-  try {
-    const host = new URL(url).hostname.toLowerCase();
-    return PRIVATE_HOST_RE.test(host);
-  } catch {
-    return true; // unparseable → treat as unsafe
-  }
-}
+export { isPrivateUrl };
 
 export function signPayload(body: string, secret: string): string {
   return "sha256=" + crypto.createHmac("sha256", secret).update(body).digest("hex");
 }
 
-async function logDelivery(
-  instanceId: string,
-  event: string,
-  url: string,
-  statusCode: number | null,
-  durationMs: number | null,
-  error: string | null
-) {
-  await db("webhook_logs")
-    .insert({ instance_id: instanceId, event, url, status_code: statusCode, duration_ms: durationMs, error })
-    .catch(() => {}); // never let logging fail a delivery
-
-  // Prune logs older than 3 hours
-  await db("webhook_logs")
-    .where("instance_id", instanceId)
-    .where("created_at", "<", new Date(Date.now() - 3 * 60 * 60 * 1000))
-    .delete()
-    .catch(() => {});
+/** Whether a webhook should get this event: enabled, subscribed, and its filters match. */
+export function shouldDeliver(w: Pick<WebhookRow, "enabled" | "events" | "filters">, event: string, data: Record<string, unknown>): boolean {
+  if (!w.enabled) return false;
+  const events = w.events ?? [];
+  if (events.length > 0 && !events.includes(event)) return false;
+  return matchesFilters(parseFilters(w.filters), event, data);
 }
 
 class WebhookDispatcher {
   async send(instanceId: string, event: WebhookEventType, data: Record<string, unknown>) {
-    const instance = await db("instances").where({ id: instanceId }).first();
-    if (!instance?.webhook_url) return;
+    const hooks: WebhookRow[] = await db("webhooks").where({ instance_id: instanceId, enabled: true });
+    const targets = hooks.filter((w) => shouldDeliver(w, event, data));
+    if (targets.length === 0) return;
 
-    const subscribedEvents: string[] = instance.webhook_events ?? [];
-    if (subscribedEvents.length > 0 && !subscribedEvents.includes(event)) return;
+    const instance = await db("instances").where({ id: instanceId }).select("user_id").first();
+    // Each webhook is delivered independently, so a slow or failing endpoint
+    // doesn't hold up the others
+    await Promise.allSettled(targets.map((w) => this.deliver(w, instance?.user_id, event, data)));
+  }
 
-    const url = instance.webhook_url as string;
-
-    if (isPrivateUrl(url)) {
-      logger.warn({ instanceId, url }, "Webhook URL targets private address, skipping");
+  private async deliver(w: WebhookRow, userId: string | undefined, event: WebhookEventType, data: Record<string, unknown>) {
+    if (isPrivateUrl(w.url)) {
+      logger.warn({ instanceId: w.instance_id, webhookId: w.id, url: w.url }, "Webhook URL targets private address, skipping");
       return;
     }
 
     const payload = {
-      instanceId,
-      userId: instance.user_id,
+      instanceId: w.instance_id,
+      webhookId: w.id,
+      userId,
       event,
       timestamp: Math.floor(Date.now() / 1000),
       data,
     };
-
     const body = JSON.stringify(payload);
     const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (instance.webhook_secret) {
-      headers["X-Webhook-Signature"] = signPayload(body, instance.webhook_secret as string);
-    }
+    if (w.secret) headers["X-Webhook-Signature"] = signPayload(body, w.secret);
 
     const maxAttempts = config.webhookMaxRetries;
-    let lastError: string | null = null;
-
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       const t0 = Date.now();
       try {
-        const resp = await axios.post(url, payload, { timeout: config.webhookTimeoutMs, headers });
-        await logDelivery(instanceId, event, url, resp.status, Date.now() - t0, null);
+        // Send the exact bytes that were signed
+        const resp = await axios.post(w.url, body, { timeout: config.webhookTimeoutMs, headers });
+        await logDelivery(w.instance_id, w.id, event, w.url, resp.status, Date.now() - t0, null);
         return;
       } catch (err) {
         const duration = Date.now() - t0;
         const statusCode = axios.isAxiosError(err) ? (err.response?.status ?? null) : null;
-        lastError = err instanceof Error ? err.message : String(err);
-        logger.warn({ instanceId, event, attempt, err }, "Webhook delivery failed");
-
+        logger.warn({ instanceId: w.instance_id, webhookId: w.id, event, attempt, err }, "Webhook delivery failed");
         if (attempt === maxAttempts) {
-          await logDelivery(instanceId, event, url, statusCode, duration, lastError);
+          await logDelivery(w.instance_id, w.id, event, w.url, statusCode, duration, err instanceof Error ? err.message : String(err));
         } else {
           await new Promise((r) => setTimeout(r, attempt * 2000));
         }
