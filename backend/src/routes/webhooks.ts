@@ -1,128 +1,112 @@
-import axios from "axios";
-import crypto from "crypto";
 import { Router, Request, Response } from "express";
 import { z } from "zod";
 import { requireApiKey, requireInstanceOwner } from "../auth/middleware.js";
-import { db } from "../db/index.js";
 import { ALL_WEBHOOK_EVENTS } from "../webhooks/events.js";
-import { isPrivateUrl, signPayload } from "../webhooks/dispatcher.js";
-import { config } from "../config.js";
+import { signPayload } from "../webhooks/dispatcher.js";
+import {
+  createWebhook,
+  deleteWebhook,
+  getPrimaryWebhook,
+  getWebhook,
+  listLogs,
+  listWebhooks,
+  removeSecret,
+  serialize,
+  testWebhook,
+  updateWebhook,
+} from "../webhooks/store.js";
 
-const router = Router({ mergeParams: true });
+// ── /instances/:instanceId/webhooks - several webhooks per instance ─────────
 
-router.use(requireApiKey);
-router.use(requireInstanceOwner);
+export const webhooksRouter = Router({ mergeParams: true });
+webhooksRouter.use(requireApiKey);
+webhooksRouter.use(requireInstanceOwner);
 
-router.get("/", async (req: Request, res: Response) => {
-  const instance = req.instance!;
-  res.json({
-    url: instance.webhook_url ?? null,
-    events: instance.webhook_events ?? [],
-    hasSecret: !!instance.webhook_secret,
-  });
+webhooksRouter.get("/", async (req: Request, res: Response) => {
+  res.json((await listWebhooks(req.params.instanceId)).map(serialize));
 });
 
-router.put("/", async (req: Request, res: Response) => {
+webhooksRouter.post("/", async (req: Request, res: Response) => {
+  res.status(201).json(serialize(await createWebhook(req.params.instanceId, req.body ?? {})));
+});
+
+// Delivery log for all of the instance's webhooks (?webhookId= for one)
+webhooksRouter.get("/logs", async (req: Request, res: Response) => {
+  const { webhookId } = z.object({ webhookId: z.string().uuid().optional() }).parse(req.query);
+  res.json(await listLogs(req.params.instanceId, webhookId));
+});
+
+webhooksRouter.get("/:webhookId", async (req: Request, res: Response) => {
+  res.json(serialize(await getWebhook(req.params.instanceId, req.params.webhookId)));
+});
+
+webhooksRouter.patch("/:webhookId", async (req: Request, res: Response) => {
+  res.json(serialize(await updateWebhook(req.params.instanceId, req.params.webhookId, req.body ?? {})));
+});
+
+webhooksRouter.delete("/:webhookId", async (req: Request, res: Response) => {
+  await deleteWebhook(req.params.instanceId, req.params.webhookId);
+  res.json({ ok: true });
+});
+
+webhooksRouter.post("/:webhookId/test", async (req: Request, res: Response) => {
+  const w = await getWebhook(req.params.instanceId, req.params.webhookId);
+  res.json(await testWebhook(w, req.userId, signPayload));
+});
+
+webhooksRouter.delete("/:webhookId/secret", async (req: Request, res: Response) => {
+  await removeSecret(req.params.instanceId, req.params.webhookId);
+  res.json({ ok: true });
+});
+
+// ── /instances/:instanceId/webhook - original single-webhook API ────────────
+// Kept for existing integrations: acts on the instance's first webhook.
+
+export const legacyWebhookRouter = Router({ mergeParams: true });
+legacyWebhookRouter.use(requireApiKey);
+legacyWebhookRouter.use(requireInstanceOwner);
+
+async function primaryView(instanceId: string) {
+  const w = await getPrimaryWebhook(instanceId);
+  return { url: w?.url ?? null, events: w?.events ?? [], hasSecret: !!w?.secret };
+}
+
+legacyWebhookRouter.get("/", async (req: Request, res: Response) => {
+  res.json(await primaryView(req.params.instanceId));
+});
+
+legacyWebhookRouter.put("/", async (req: Request, res: Response) => {
   const body = z.object({
     url: z.string().url().nullable().optional(),
     events: z.array(z.enum(ALL_WEBHOOK_EVENTS as [string, ...string[]])).optional(),
     secret: z.string().min(8).max(64).optional(),
-  }).safeParse(req.body);
+  }).parse(req.body);
 
-  if (!body.success) {
-    return res.status(400).json({ error: "Validation error", details: body.error.errors });
+  const instanceId = req.params.instanceId;
+  const w = await getPrimaryWebhook(instanceId);
+  if (body.url === null) {
+    // url: null switched the webhook off
+    if (w) await deleteWebhook(instanceId, w.id);
+  } else if (w) {
+    await updateWebhook(instanceId, w.id, { url: body.url, events: body.events, secret: body.secret });
+  } else if (body.url) {
+    await createWebhook(instanceId, { name: "Default", url: body.url, events: body.events ?? [], secret: body.secret });
   }
-
-  const { url, events, secret } = body.data;
-  const update: Record<string, unknown> = {};
-  if (url !== undefined) update.webhook_url = url;
-  if (events !== undefined) update.webhook_events = JSON.stringify(events);
-  if (secret !== undefined) update.webhook_secret = secret;
-
-  await db("instances").where({ id: req.params.instanceId }).update(update);
-
-  const updated = await db("instances").where({ id: req.params.instanceId }).first();
-  res.json({
-    url: updated.webhook_url ?? null,
-    events: updated.webhook_events ?? [],
-    hasSecret: !!updated.webhook_secret,
-  });
+  res.json(await primaryView(instanceId));
 });
 
-router.get("/logs", async (req: Request, res: Response) => {
-  const since = new Date(Date.now() - 3 * 60 * 60 * 1000);
-  const logs = await db("webhook_logs")
-    .where({ instance_id: req.params.instanceId })
-    .where("created_at", ">=", since)
-    .orderBy("created_at", "desc")
-    .limit(200)
-    .select("id", "event", "url", "status_code", "duration_ms", "error", "created_at");
-
-  res.json(logs);
+legacyWebhookRouter.get("/logs", async (req: Request, res: Response) => {
+  res.json(await listLogs(req.params.instanceId));
 });
 
-router.post("/test", async (req: Request, res: Response) => {
-  const instance = req.instance!;
-  const url = instance.webhook_url as string | null;
-
-  if (!url) {
-    return res.status(400).json({ error: "No webhook URL configured" });
-  }
-  if (isPrivateUrl(url)) {
-    return res.status(400).json({ error: "Webhook URL targets a private address" });
-  }
-
-  const payload = {
-    instanceId: req.params.instanceId,
-    userId: req.userId,
-    event: "test",
-    timestamp: Math.floor(Date.now() / 1000),
-    data: { message: "This is a test delivery from Botsab" },
-  };
-
-  const body = JSON.stringify(payload);
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (instance.webhook_secret) {
-    headers["X-Webhook-Signature"] = signPayload(body, instance.webhook_secret as string);
-  }
-
-  const t0 = Date.now();
-  try {
-    const resp = await axios.post(url, payload, { timeout: config.webhookTimeoutMs, headers });
-    const duration = Date.now() - t0;
-
-    await db("webhook_logs").insert({
-      instance_id: req.params.instanceId,
-      event: "test",
-      url,
-      status_code: resp.status,
-      duration_ms: duration,
-      error: null,
-    });
-
-    res.json({ success: true, statusCode: resp.status, durationMs: duration });
-  } catch (err) {
-    const duration = Date.now() - t0;
-    const statusCode = axios.isAxiosError(err) ? (err.response?.status ?? null) : null;
-    const error = err instanceof Error ? err.message : "Unknown error";
-
-    await db("webhook_logs").insert({
-      instance_id: req.params.instanceId,
-      event: "test",
-      url,
-      status_code: statusCode,
-      duration_ms: duration,
-      error,
-    });
-
-    res.json({ success: false, statusCode, durationMs: duration, error });
-  }
+legacyWebhookRouter.post("/test", async (req: Request, res: Response) => {
+  const w = await getPrimaryWebhook(req.params.instanceId);
+  if (!w) return res.status(400).json({ error: "No webhook URL configured" });
+  res.json(await testWebhook(w, req.userId, signPayload));
 });
 
-// Remove signing secret without changing other settings
-router.delete("/secret", async (req: Request, res: Response) => {
-  await db("instances").where({ id: req.params.instanceId }).update({ webhook_secret: null });
+legacyWebhookRouter.delete("/secret", async (req: Request, res: Response) => {
+  const w = await getPrimaryWebhook(req.params.instanceId);
+  if (w) await removeSecret(req.params.instanceId, w.id);
   res.json({ ok: true });
 });
-
-export default router;

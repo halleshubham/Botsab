@@ -65,10 +65,28 @@ export const logoutInstance = (id: string) =>
 export const getQr = (id: string) =>
   api.get<{ qr: string; qrString: string; expiresIn: number }>(`/instances/${id}/qr`);
 
-// Webhook
-export type WebhookConfig = { url: string | null; events: string[]; hasSecret: boolean };
+// Webhooks (several per instance, each with its own events, secret and filters)
+export type WebhookFilters = {
+  chatTypes: "all" | "groups" | "direct";
+  groups: string[];
+  senders: string[];
+  mentionsOnly: boolean;
+};
+export type Webhook = {
+  id: string;
+  name: string;
+  url: string;
+  events: string[];
+  filters: WebhookFilters;
+  enabled: boolean;
+  hasSecret: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+export type WebhookInput = Partial<Pick<Webhook, "name" | "url" | "events" | "filters" | "enabled">> & { secret?: string };
 export type WebhookLog = {
   id: string;
+  webhook_id: string | null;
   event: string;
   url: string;
   status_code: number | null;
@@ -78,12 +96,16 @@ export type WebhookLog = {
 };
 export type WebhookTestResult = { success: boolean; statusCode: number | null; durationMs: number; error?: string };
 
-export const getWebhook = (id: string) => api.get<WebhookConfig>(`/instances/${id}/webhook`);
-export const updateWebhook = (id: string, data: { url?: string | null; events?: string[]; secret?: string }) =>
-  api.put<WebhookConfig>(`/instances/${id}/webhook`, data);
-export const getWebhookLogs = (id: string) => api.get<WebhookLog[]>(`/instances/${id}/webhook/logs`);
-export const testWebhook = (id: string) => api.post<WebhookTestResult>(`/instances/${id}/webhook/test`);
-export const deleteWebhookSecret = (id: string) => api.delete(`/instances/${id}/webhook/secret`);
+export const listWebhooks = (id: string) => api.get<Webhook[]>(`/instances/${id}/webhooks`);
+export const createWebhook = (id: string, data: WebhookInput) => api.post<Webhook>(`/instances/${id}/webhooks`, data);
+export const updateWebhook = (id: string, webhookId: string, data: WebhookInput) =>
+  api.patch<Webhook>(`/instances/${id}/webhooks/${webhookId}`, data);
+export const deleteWebhook = (id: string, webhookId: string) => api.delete(`/instances/${id}/webhooks/${webhookId}`);
+export const testWebhook = (id: string, webhookId: string) =>
+  api.post<WebhookTestResult>(`/instances/${id}/webhooks/${webhookId}/test`);
+export const deleteWebhookSecret = (id: string, webhookId: string) =>
+  api.delete(`/instances/${id}/webhooks/${webhookId}/secret`);
+export const getWebhookLogs = (id: string) => api.get<WebhookLog[]>(`/instances/${id}/webhooks/logs`);
 
 // Messages
 export const sendMessage = (id: string, to: string, text: string) =>

@@ -4,6 +4,14 @@ import { z } from "zod";
 import { db } from "../db/index.js";
 import { sessionManager } from "../sessions/manager.js";
 import {
+  createWebhook,
+  deleteWebhook,
+  getPrimaryWebhook,
+  listWebhooks,
+  serialize,
+  updateWebhook,
+} from "../webhooks/store.js";
+import {
   enqueueCampaign,
   cancelCampaign,
   DEFAULT_OPTIONS,
@@ -598,46 +606,110 @@ export function createBotsabMcpServer(userId: string): McpServer {
 
   server.tool(
     "get_webhook",
-    "Get the webhook configuration for an instance",
+    "Get the instance's first webhook (url, events, whether a signing secret is set). Use list_webhooks to see all of them.",
     { instanceId: z.string().describe("Instance ID") },
     async ({ instanceId }) => {
       try {
         await ownsInstance(userId, instanceId);
-        const row = await db("instances")
-          .where({ id: instanceId })
-          .select("webhook_url", "webhook_events", "webhook_has_secret")
-          .first();
-        return ok({
-          url: row?.webhook_url ?? null,
-          events: row?.webhook_events ?? [],
-          hasSecret: row?.webhook_has_secret ?? false,
-        });
+        const w = await getPrimaryWebhook(instanceId);
+        return ok({ url: w?.url ?? null, events: w?.events ?? [], hasSecret: !!w?.secret });
       } catch (e) { return err((e as Error).message); }
     }
   );
 
   server.tool(
     "set_webhook",
-    "Set or update the webhook URL and events for an instance",
+    "Set or update the instance's first webhook URL and events (url null removes it). Use create_webhook to add more webhooks.",
     {
       instanceId: z.string().describe("Instance ID"),
-      url: z.string().url().nullable().describe("Webhook URL (null to disable)"),
+      url: z.string().url().nullable().describe("Webhook URL (null to remove)"),
       events: z.array(z.string()).describe("List of event types to subscribe to"),
       secret: z.string().optional().describe("Optional HMAC signing secret"),
     },
     async ({ instanceId, url, events, secret }) => {
       try {
         await ownsInstance(userId, instanceId);
-        const update: Record<string, unknown> = {
-          webhook_url: url,
-          webhook_events: JSON.stringify(events),
-        };
-        if (secret !== undefined) {
-          update.webhook_secret = secret;
-          update.webhook_has_secret = true;
+        const w = await getPrimaryWebhook(instanceId);
+        if (url === null) {
+          if (w) await deleteWebhook(instanceId, w.id);
+        } else if (w) {
+          await updateWebhook(instanceId, w.id, { url, events, secret });
+        } else {
+          await createWebhook(instanceId, { name: "Default", url, events, secret });
         }
-        await db("instances").where({ id: instanceId }).update(update);
         return ok({ updated: true, url, events });
+      } catch (e) { return err((e as Error).message); }
+    }
+  );
+
+  const filtersArg = z.object({
+    chatTypes: z.enum(["all", "groups", "direct"]).optional().describe("Only group chats, only direct chats, or all"),
+    groups: z.array(z.string()).optional().describe("Only these groups (group JIDs ending in @g.us); empty = any group"),
+    senders: z.array(z.string()).optional().describe("Only messages from these phone numbers (with country code); empty = anyone"),
+    mentionsOnly: z.boolean().optional().describe("Only messages that tag this WhatsApp account"),
+  }).optional().describe("Filters for message.received; other events are not filtered");
+
+  server.tool(
+    "list_webhooks",
+    "List all webhooks of an instance with their events, filters and on/off state",
+    { instanceId: z.string().describe("Instance ID") },
+    async ({ instanceId }) => {
+      try {
+        await ownsInstance(userId, instanceId);
+        return ok((await listWebhooks(instanceId)).map(serialize));
+      } catch (e) { return err((e as Error).message); }
+    }
+  );
+
+  server.tool(
+    "create_webhook",
+    "Add a webhook to an instance (up to 10), optionally filtered by chat type, groups, senders or mentions",
+    {
+      instanceId: z.string().describe("Instance ID"),
+      name: z.string().optional().describe("Label, e.g. 'n8n agent'"),
+      url: z.string().url().describe("Endpoint URL"),
+      events: z.array(z.string()).optional().describe("Event types; default ['message.received']"),
+      secret: z.string().optional().describe("Optional HMAC signing secret (8-64 chars)"),
+      filters: filtersArg,
+    },
+    async ({ instanceId, name, url, events, secret, filters }) => {
+      try {
+        await ownsInstance(userId, instanceId);
+        return ok(serialize(await createWebhook(instanceId, { name, url, events, secret, filters })));
+      } catch (e) { return err((e as Error).message); }
+    }
+  );
+
+  server.tool(
+    "update_webhook",
+    "Change a webhook's name, URL, events, secret, filters or enabled state (only the fields given)",
+    {
+      instanceId: z.string().describe("Instance ID"),
+      webhookId: z.string().describe("Webhook ID from list_webhooks"),
+      name: z.string().optional(),
+      url: z.string().url().optional(),
+      events: z.array(z.string()).optional(),
+      secret: z.string().optional(),
+      filters: filtersArg,
+      enabled: z.boolean().optional(),
+    },
+    async ({ instanceId, webhookId, ...changes }) => {
+      try {
+        await ownsInstance(userId, instanceId);
+        return ok(serialize(await updateWebhook(instanceId, webhookId, changes)));
+      } catch (e) { return err((e as Error).message); }
+    }
+  );
+
+  server.tool(
+    "delete_webhook",
+    "Delete one webhook of an instance",
+    { instanceId: z.string().describe("Instance ID"), webhookId: z.string().describe("Webhook ID from list_webhooks") },
+    async ({ instanceId, webhookId }) => {
+      try {
+        await ownsInstance(userId, instanceId);
+        await deleteWebhook(instanceId, webhookId);
+        return ok({ deleted: true });
       } catch (e) { return err((e as Error).message); }
     }
   );
