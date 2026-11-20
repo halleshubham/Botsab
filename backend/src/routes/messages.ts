@@ -17,7 +17,9 @@ const router = Router({ mergeParams: true });
 router.use(requireApiKey);
 router.use(requireInstanceOwner);
 
-const jidSchema = z.string().regex(/^[^@]+@(s\.whatsapp\.net|g\.us)$/, "Invalid JID format");
+// Phone-number JIDs, groups, and LID JIDs (WhatsApp's privacy IDs, used for
+// many chats and senders - webhook payloads carry them as-is)
+const jidSchema = z.string().regex(/^[^@]+@(s\.whatsapp\.net|g\.us|lid)$/, "Invalid JID format");
 
 // Group-only mention options (ignored for individual chats): mentionAll is
 // WhatsApp's native @all, tagAll mentions every member individually

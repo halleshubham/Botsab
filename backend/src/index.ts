@@ -1,4 +1,7 @@
 import express from "express";
+// Route handlers are async: send their errors (e.g. a failed zod parse) to
+// errorHandler as a 400/500 instead of an unhandled rejection that kills the process
+import "express-async-errors";
 import rateLimit from "express-rate-limit";
 import fs from "fs/promises";
 import fsSync from "fs";
@@ -127,6 +130,10 @@ async function cleanupStaleCampaigns() {
     logger.info({ running, queued }, "Cleaned up stale campaigns from previous run");
   }
 }
+
+// Last resort: log a stray promise rejection instead of exiting, which would
+// drop every connected WhatsApp session along with the request that caused it
+process.on("unhandledRejection", (err) => logger.error({ err }, "Unhandled promise rejection"));
 
 app.listen(config.port, async () => {
   await db.migrate.latest();
